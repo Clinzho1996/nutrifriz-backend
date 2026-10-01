@@ -1,3 +1,5 @@
+/// <reference path="./express.d.ts" />
+
 import { Types } from "mongoose";
 
 export type Role = "customer" | "admin" | "staff" | "b2b";

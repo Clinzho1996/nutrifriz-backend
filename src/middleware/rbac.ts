@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
-import { AppError } from "../utils/AppError";
 import { Permission, Role } from "../types";
+import { AppError } from "../utils/AppError";
 
 const ROLE_PERMISSIONS: Record<Role, Permission[] | ["*"]> = {
 	customer: [],
@@ -74,7 +74,10 @@ export function can(permission: Permission) {
 	return (req: Request, _res: Response, next: NextFunction): void => {
 		if (!req.user) return next(AppError.unauthorized());
 		const perms = ROLE_PERMISSIONS[req.user.role] ?? [];
-		if (perms.includes("*" as Permission) || perms.includes(permission))
+		if (
+			(perms as Permission[]).includes("*" as Permission) ||
+			(perms as Permission[]).includes(permission)
+		)
 			return next();
 		return next(AppError.forbidden(`Missing permission: ${permission}`));
 	};

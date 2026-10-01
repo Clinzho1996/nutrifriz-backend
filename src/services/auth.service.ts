@@ -1,15 +1,14 @@
-import { Types } from "mongoose";
-import { User, IUser } from "../models/User";
+import { IUser, User } from "../models/User";
+import { IAddress } from "../types";
 import { AppError } from "../utils/AppError";
-import { hashPassword, comparePassword } from "../utils/password";
 import {
 	signAccessToken,
 	signRefreshToken,
 	verifyRefreshToken,
 } from "../utils/jwt";
-import { recordAudit } from "./audit.service";
+import { comparePassword, hashPassword } from "../utils/password";
 import { AddressInput, RegisterInput } from "../validators/auth.validator";
-import { IAddress } from "../types";
+import { recordAudit } from "./audit.service";
 
 interface AuthResult {
 	user: Partial<IUser>;
@@ -185,12 +184,13 @@ export async function listUsers(query: {
 	role?: string;
 }) {
 	const filter: Record<string, unknown> = {};
-	if (query.q)
+	if (query.q) {
 		filter.$or = [
 			{ email: new RegExp(query.q, "i") },
 			{ firstName: new RegExp(query.q, "i") },
 			{ lastName: new RegExp(query.q, "i") },
 		];
+	}
 	if (query.role) filter.role = query.role;
 
 	const [items, total] = await Promise.all([

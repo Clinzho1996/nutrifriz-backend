@@ -1,14 +1,14 @@
 import { Router } from "express";
+import { z } from "zod";
 import * as ctrl from "../controllers/collection.controller";
 import { requireAuth } from "../middleware/auth";
 import { requireAdmin } from "../middleware/rbac";
 import { validate } from "../middleware/validate";
 import {
 	createCollectionSchema,
-	updateCollectionSchema,
 	listCollectionsQuerySchema,
+	updateCollectionSchema,
 } from "../validators/collection.validator";
-import { z } from "zod";
 
 const router = Router();
 const objectId = z.string().regex(/^[a-fA-F0-9]{24}$/);

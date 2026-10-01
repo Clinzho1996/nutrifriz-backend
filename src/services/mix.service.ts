@@ -1,29 +1,33 @@
 import { Types } from "mongoose";
-import { MixRule, IMixRule } from "../models/MixRule";
-import { MixConfig, IMixConfig } from "../models/MixConfig";
+import { IMixConfig, MixConfig } from "../models/MixConfig";
+import { MixRule } from "../models/MixRule";
 import { Product } from "../models/Product";
 import { AppError } from "../utils/AppError";
 import {
+	MixRuleInput,
 	PriceMixInput,
 	SaveMixInput,
-	MixRuleInput,
 } from "../validators/mix.validator";
 
-export async function listRules(): Promise<IMixRule[]> {
+type LeanMixRule =
+	ReturnType<typeof MixRule.findOne> extends never ? never : any;
+type LeanMixConfig = any;
+
+export async function listRules(): Promise<any[]> {
 	return MixRule.find({ isActive: true }).sort({ packSize: 1 }).lean();
 }
 
-export async function upsertRule(input: MixRuleInput): Promise<IMixRule> {
+export async function upsertRule(input: MixRuleInput): Promise<any> {
 	validateRuleShape(input);
 	const rule = await MixRule.findOneAndUpdate(
 		{ packSize: input.packSize },
 		{ $set: input },
 		{ new: true, upsert: true, setDefaultsOnInsert: true },
-	);
-	return rule as IMixRule;
+	).lean();
+	return rule;
 }
 
-export async function getRuleForPack(packSize: string): Promise<IMixRule> {
+export async function getRuleForPack(packSize: string): Promise<any> {
 	const rule = await MixRule.findOne({ packSize, isActive: true }).lean();
 	if (!rule)
 		throw AppError.badRequest(
@@ -52,7 +56,7 @@ export async function priceMix(input: PriceMixInput) {
 	const productIds = input.fruits.map((f) => f.productId);
 
 	for (const f of input.fruits) {
-		if (!rule.allowedFruitIds.some((id) => String(id) === f.productId)) {
+		if (!rule.allowedFruitIds.some((id: any) => String(id) === f.productId)) {
 			throw AppError.badRequest(
 				`Fruit ${f.productId} is not available for Build Your Mix`,
 			);
@@ -105,13 +109,13 @@ export async function saveMix(
 	return mix;
 }
 
-export async function getMixById(id: string): Promise<IMixConfig> {
+export async function getMixById(id: string): Promise<any> {
 	const mix = await MixConfig.findById(id).lean();
 	if (!mix) throw AppError.notFound("Mix not found");
 	return mix;
 }
 
-export async function listMixesForUser(userId: string) {
+export async function listMixesForUser(userId: string): Promise<any[]> {
 	return MixConfig.find({ userId }).sort({ createdAt: -1 }).lean();
 }
 
