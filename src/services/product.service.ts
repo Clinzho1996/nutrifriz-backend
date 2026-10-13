@@ -1,5 +1,5 @@
 import { FilterQuery } from "mongoose";
-import { Product, IProduct } from "../models/Product";
+import { IProduct, Product } from "../models/Product";
 import { Review } from "../models/Review";
 import { AppError } from "../utils/AppError";
 import { uniqueSlug } from "../utils/slugify";
@@ -70,7 +70,8 @@ export async function listProducts(query: ListProductsQuery) {
 			.sort(sort)
 			.skip((query.page - 1) * query.limit)
 			.limit(query.limit)
-			.lean(),
+			.lean()
+			.populate("categoryId", "name slug"),
 		Product.countDocuments(filter),
 	]);
 
@@ -87,7 +88,9 @@ export async function getProductBySlug(slug: string, publicOnly = true) {
 	const filter: FilterQuery<IProduct> = { slug };
 	if (publicOnly) filter.status = "published";
 
-	const product = await Product.findOne(filter).lean();
+	const product = await Product.findOne(filter)
+		.lean()
+		.populate("categoryId", "name slug");
 	if (!product) throw AppError.notFound("Product not found");
 	return product;
 }
