@@ -1,17 +1,18 @@
 import { Router } from "express";
+import analyticsRoutes from "./analytics.routes";
 import authRoutes from "./auth.routes";
-import productRoutes from "./product.routes";
-import collectionRoutes from "./collection.routes";
-import mixRoutes from "./mix.routes";
-import checkoutRoutes from "./checkout.routes";
-import webhookRoutes from "./webhook.routes";
-import orderRoutes from "./order.routes";
-import reviewRoutes from "./review.routes";
-import journalRoutes from "./journal.routes";
 import b2bRoutes from "./b2b.routes";
 import cardRoutes from "./card.routes";
-import analyticsRoutes from "./analytics.routes";
+import categoryRoutes from "./category.routes";
+import checkoutRoutes from "./checkout.routes";
+import collectionRoutes from "./collection.routes";
+import journalRoutes from "./journal.routes";
+import mixRoutes from "./mix.routes";
+import orderRoutes from "./order.routes";
+import productRoutes from "./product.routes";
+import reviewRoutes from "./review.routes";
 import uploadRoutes from "./upload.routes";
+import webhookRoutes from "./webhook.routes";
 
 const router = Router();
 
@@ -30,6 +31,7 @@ router.use("/b2b", b2bRoutes);
 router.use("/cards", cardRoutes);
 router.use("/admin/analytics", analyticsRoutes);
 router.use("/admin/uploads", uploadRoutes);
+router.use("/categories", categoryRoutes);
 
 router.get("/health", (_req, res) => {
 	res.json({

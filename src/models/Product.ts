@@ -35,6 +35,7 @@ export interface IProduct extends Document {
 	status: ProductStatus;
 	ratingAvg: number;
 	ratingCount: number;
+	categoryId?: Types.ObjectId;
 	isBuildYourMixEligible: boolean;
 	isFeatured: boolean;
 	tags: string[];
@@ -95,6 +96,7 @@ const ProductSchema = new Schema<IProduct>(
 		storage: { type: String },
 		shelfLife: { type: String },
 		shippingInfo: { type: String },
+		categoryId: { type: Schema.Types.ObjectId, ref: "Category", index: true },
 		status: {
 			type: String,
 			enum: ["draft", "published", "archived"],
@@ -111,6 +113,7 @@ const ProductSchema = new Schema<IProduct>(
 );
 
 ProductSchema.index({ name: "text", shortDescription: "text", tags: "text" });
+ProductSchema.index({ categoryId: 1, status: 1 });
 
 export const Product: Model<IProduct> = model<IProduct>(
 	"Product",

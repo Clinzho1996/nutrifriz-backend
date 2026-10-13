@@ -20,6 +20,10 @@ export const createProductSchema = z.object({
 	name: z.string().min(2).max(120),
 	slug: z.string().min(2).optional(),
 	category: z.enum(["fruit", "mix", "collection", "gift"]),
+	categoryId: z
+		.string()
+		.regex(/^[a-fA-F0-9]{24}$/)
+		.optional(),
 	fruit: z.string().max(60).optional(),
 	shortDescription: z.string().min(5).max(240),
 	description: z.string().min(10),
