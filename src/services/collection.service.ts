@@ -37,6 +37,22 @@ export async function deleteCollection(id: string): Promise<void> {
 	await collection.save();
 }
 
+const POPULATE_FIELDS =
+	"name slug images packSizes sku status isFeatured category";
+
+function sanitizeItems(collection: any) {
+	if (!collection?.items) return collection;
+	const validItems = collection.items.filter(
+		(item: any) => item.productId && typeof item.productId === "object",
+	);
+	const orphanedCount = collection.items.length - validItems.length;
+	return {
+		...collection,
+		items: validItems,
+		orphanedItemCount: orphanedCount,
+	};
+}
+
 export async function listCollections(query: {
 	page: number;
 	limit: number;
@@ -56,13 +72,13 @@ export async function listCollections(query: {
 			.sort({ createdAt: -1 })
 			.skip((query.page - 1) * query.limit)
 			.limit(query.limit)
-			.populate("items.productId", "name slug images packSizes")
+			.populate("items.productId", POPULATE_FIELDS)
 			.lean(),
 		Collection.countDocuments(filter),
 	]);
 
 	return {
-		items,
+		items: items.map(sanitizeItems),
 		total,
 		page: query.page,
 		limit: query.limit,
@@ -75,18 +91,18 @@ export async function getCollectionBySlug(slug: string, publicOnly = true) {
 	if (publicOnly) filter.status = "published";
 
 	const collection = await Collection.findOne(filter)
-		.populate("items.productId", "name slug images packSizes status")
+		.populate("items.productId", POPULATE_FIELDS)
 		.lean();
 	if (!collection) throw AppError.notFound("Collection not found");
-	return collection;
+	return sanitizeItems(collection);
 }
 
 export async function getCollectionById(id: string) {
 	const collection = await Collection.findById(id)
-		.populate("items.productId", "name slug images packSizes status")
+		.populate("items.productId", POPULATE_FIELDS)
 		.lean();
 	if (!collection) throw AppError.notFound("Collection not found");
-	return collection;
+	return sanitizeItems(collection);
 }
 
 export async function computeCollectionPrice(
