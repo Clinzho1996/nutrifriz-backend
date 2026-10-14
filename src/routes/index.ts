@@ -6,6 +6,7 @@ import cardRoutes from "./card.routes";
 import categoryRoutes from "./category.routes";
 import checkoutRoutes from "./checkout.routes";
 import collectionRoutes from "./collection.routes";
+import customerRoutes from "./customer.routes";
 import journalRoutes from "./journal.routes";
 import mixRoutes from "./mix.routes";
 import orderRoutes from "./order.routes";
@@ -31,6 +32,7 @@ router.use("/b2b", b2bRoutes);
 router.use("/cards", cardRoutes);
 router.use("/admin/analytics", analyticsRoutes);
 router.use("/admin/uploads", uploadRoutes);
+router.use("/admin/customers", customerRoutes);
 router.use("/categories", categoryRoutes);
 
 router.get("/health", (_req, res) => {
