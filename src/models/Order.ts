@@ -11,7 +11,8 @@ export interface IOrderItem {
 }
 
 export interface IOrderPayment {
-	provider: "paystack";
+	provider: "paystack" | "manual";
+	method?: "cash" | "transfer" | "pos" | "paystack" | "other";
 	reference: string;
 	status: PaymentStatus;
 	paidAt?: Date;
@@ -41,6 +42,7 @@ export interface IOrder extends Document {
 	items: IOrderItem[];
 	subtotal: number;
 	shippingFee: number;
+	source: "online" | "manual";
 	total: number;
 	currency: "NGN";
 	shippingAddress: IAddress;
@@ -86,9 +88,13 @@ const PaymentSchema = new Schema<IOrderPayment>(
 	{
 		provider: {
 			type: String,
-			enum: ["paystack"],
+			enum: ["paystack", "manual"],
 			required: true,
 			default: "paystack",
+		},
+		method: {
+			type: String,
+			enum: ["cash", "transfer", "pos", "paystack", "other"],
 		},
 		reference: { type: String, required: true, index: true, unique: true },
 		status: {
@@ -146,6 +152,12 @@ const OrderSchema = new Schema<IOrder>(
 				"refunded",
 			],
 			default: "pending",
+			index: true,
+		},
+		source: {
+			type: String,
+			enum: ["online", "manual"],
+			default: "online",
 			index: true,
 		},
 		payment: { type: PaymentSchema, required: true },

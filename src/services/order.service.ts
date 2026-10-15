@@ -1,18 +1,19 @@
 import { Types } from "mongoose";
-import { Order, IOrder, IOrderItem } from "../models/Order";
-import { Product } from "../models/Product";
 import { Collection, ICollection } from "../models/Collection";
 import { MixConfig } from "../models/MixConfig";
+import { IOrder, IOrderItem, Order } from "../models/Order";
+import { Product } from "../models/Product";
 import { User } from "../models/User";
+import { OrderStatus } from "../types";
 import { AppError } from "../utils/AppError";
 import { nextOrderNumber } from "../utils/orderNumber";
-import { recordAudit } from "./audit.service";
-import { initializeTransaction } from "./paystack.service";
 import {
 	CheckoutInitInput,
+	CreateManualOrderInput,
 	ListOrdersQuery,
 } from "../validators/order.validator";
-import { OrderStatus } from "../types";
+import { recordAudit } from "./audit.service";
+import { initializeTransaction } from "./paystack.service";
 
 interface BuiltCart {
 	items: IOrderItem[];
@@ -225,6 +226,114 @@ export async function markOrderPaid(
 	return order;
 }
 
+/**
+ * Create a manual order — bypasses Paystack, deducts stock immediately,
+ * and marks the payment however the admin decided.
+ */
+export async function createManualOrder(
+	actorId: string,
+	input: CreateManualOrderInput,
+): Promise<IOrder> {
+	// Build line items + subtotal using the same logic as checkout
+	const { items, subtotal } = await buildCartItems(input.items);
+	const shippingFee = input.shippingFee ?? 0;
+	const total = subtotal + shippingFee;
+
+	// Resolve customer link
+	let userId: Types.ObjectId | undefined;
+	let guestEmail: string | undefined;
+
+	if (input.userId) {
+		userId = new Types.ObjectId(input.userId);
+	} else if (input.guestEmail) {
+		guestEmail = input.guestEmail;
+	} else {
+		throw AppError.badRequest("Provide either userId or guestEmail");
+	}
+
+	// Generate order number + placeholder reference
+	const orderNumber = await nextOrderNumber(Order);
+	const reference = `MANUAL_${orderNumber}_${Date.now()}`;
+
+	const now = new Date();
+	const isPaid = input.paymentStatus === "success";
+
+	const order = await Order.create({
+		orderNumber,
+		userId,
+		guestEmail,
+		items,
+		subtotal,
+		shippingFee,
+		total,
+		currency: "NGN",
+		shippingAddress: input.shippingAddress,
+		status: input.status,
+		source: "manual",
+		payment: {
+			provider: "manual",
+			method: input.paymentMethod,
+			reference,
+			status: input.paymentStatus,
+			paidAt: isPaid ? now : undefined,
+			raw: input.paymentNote ? { note: input.paymentNote } : undefined,
+		},
+		fulfilment: {},
+		history: [
+			{ status: "pending", at: now, by: new Types.ObjectId(actorId) },
+			...(input.status !== "pending"
+				? [
+						{
+							status: input.status,
+							at: now,
+							by: new Types.ObjectId(actorId),
+							note: input.note ?? "Manual order created",
+						},
+					]
+				: []),
+		],
+	});
+
+	// Deduct stock for product lines immediately
+	for (const item of order.items) {
+		if (item.kind === "product") {
+			const packSize = (item.meta as any)?.packSize;
+			if (!packSize) continue;
+			await Product.updateOne(
+				{ _id: item.refId, "packSizes.size": packSize },
+				{ $inc: { "packSizes.$.stock": -item.qty } },
+			);
+		}
+		if (item.kind === "mix") {
+			await MixConfig.findByIdAndUpdate(item.refId, { status: "ordered" });
+		}
+	}
+
+	// Award crunch points for known users on paid manual orders
+	if (order.userId && isPaid) {
+		const points = Math.floor(order.total / 1000);
+		if (points > 0) {
+			await User.findByIdAndUpdate(order.userId, {
+				$inc: { crunchPoints: points },
+			});
+		}
+	}
+
+	await recordAudit({
+		actorId,
+		action: "order.manual.create",
+		entity: "Order",
+		entityId: String(order._id),
+		after: {
+			orderNumber,
+			total,
+			source: "manual",
+			paymentMethod: input.paymentMethod,
+		},
+	});
+
+	return order;
+}
 export async function markOrderFailed(
 	reference: string,
 	payload?: Record<string, unknown>,
@@ -256,6 +365,8 @@ export async function getOrderByNumber(orderNumber: string) {
 export async function listOrders(query: ListOrdersQuery) {
 	const filter: Record<string, unknown> = {};
 	if (query.status) filter.status = query.status;
+	const source = (query as ListOrdersQuery & { source?: string }).source;
+	if (source) filter.source = source;
 	if (query.from || query.to) {
 		const range: Record<string, Date> = {};
 		if (query.from) range.$gte = new Date(query.from);

@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { asyncHandler } from "../utils/asyncHandler";
-import { ok, paginated } from "../utils/apiResponse";
 import * as orderService from "../services/order.service";
+import { created, ok, paginated } from "../utils/apiResponse";
+import { asyncHandler } from "../utils/asyncHandler";
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
 	const query = req.query as any;
@@ -18,6 +18,16 @@ export const getByNumber = asyncHandler(async (req: Request, res: Response) => {
 	const order = await orderService.getOrderByNumber(req.params.orderNumber);
 	return ok(res, order);
 });
+
+export const createManual = asyncHandler(
+	async (req: Request, res: Response) => {
+		const order = await orderService.createManualOrder(
+			String(req.user!._id),
+			req.body,
+		);
+		return created(res, order, "Manual order created");
+	},
+);
 
 export const updateStatus = asyncHandler(
 	async (req: Request, res: Response) => {
