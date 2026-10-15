@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { asyncHandler } from "../utils/asyncHandler";
-import { ok, created, paginated } from "../utils/apiResponse";
 import * as productService from "../services/product.service";
 import * as reviewService from "../services/review.service";
+import { created, ok, paginated } from "../utils/apiResponse";
+import { asyncHandler } from "../utils/asyncHandler";
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
 	const query = req.query as any;
@@ -41,3 +41,12 @@ export const listProductReviews = asyncHandler(
 		return ok(res, reviews);
 	},
 );
+
+export function importTemplate(
+	arg0: string,
+	requireAuth: (req: Request, _res: Response, next: NextFunction) => void,
+	requireAdmin: (req: Request, _res: Response, next: NextFunction) => void,
+	importTemplate: any,
+) {
+	throw new Error("Function not implemented.");
+}

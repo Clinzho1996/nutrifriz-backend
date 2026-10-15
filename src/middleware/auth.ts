@@ -1,12 +1,8 @@
-import { NextFunction, Request, Response } from "express";
+import { NextFunction, Request, RequestHandler, Response } from "express";
 import { AppError } from "../utils/AppError";
 import { verifyAccessToken } from "../utils/jwt";
 
-export function requireAuth(
-	req: Request,
-	_res: Response,
-	next: NextFunction,
-): void {
+export const requireAuth: RequestHandler = (req, _res, next) => {
 	const header = req.headers.authorization;
 	if (!header || !header.startsWith("Bearer ")) {
 		return next(
@@ -28,7 +24,7 @@ export function requireAuth(
 	} catch {
 		next(AppError.unauthorized("Invalid or expired token"));
 	}
-}
+};
 
 export function optionalAuth(
 	req: Request,

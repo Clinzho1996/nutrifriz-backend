@@ -1,19 +1,35 @@
 import { Router } from "express";
+import multer from "multer";
+import { z } from "zod";
 import * as ctrl from "../controllers/product.controller";
 import { requireAuth } from "../middleware/auth";
 import { requireAdmin } from "../middleware/rbac";
 import { validate } from "../middleware/validate";
+import { AppError } from "../utils/AppError";
 import {
 	createProductSchema,
-	updateProductSchema,
 	listProductsQuerySchema,
+	updateProductSchema,
 } from "../validators/product.validator";
-import { z } from "zod";
 
 const router = Router();
 const objectId = z.string().regex(/^[a-fA-F0-9]{24}$/);
 
-// Public
+// CSV upload middleware for product import
+const csvUpload = multer({
+	storage: multer.memoryStorage(),
+	limits: { fileSize: 10 * 1024 * 1024 },
+	fileFilter: (_req, file, cb) => {
+		const ok =
+			file.mimetype === "text/csv" ||
+			file.mimetype === "application/vnd.ms-excel" ||
+			file.originalname.toLowerCase().endsWith(".csv");
+		if (!ok) return cb(new AppError(400, "Only CSV files are allowed"));
+		cb(null, true);
+	},
+});
+
+// ── Public ─────────────────────────────────────────────
 router.get("/", validate({ query: listProductsQuerySchema }), ctrl.list);
 router.get("/slug/:slug", ctrl.getBySlug);
 router.get(
@@ -22,7 +38,24 @@ router.get(
 	ctrl.listProductReviews,
 );
 
-// Admin
+// ── Admin — literal segments FIRST ─────────────────────
+// These MUST come before /admin/:id, otherwise Express
+// treats "import-template" as an id and fails validation.
+router.get(
+	"/admin/import-template",
+	requireAuth,
+	requireAdmin,
+	ctrl.importTemplate,
+);
+router.post(
+	"/admin/import",
+	requireAuth,
+	requireAdmin,
+	csvUpload.single("file"),
+	ctrl.importCsv,
+);
+
+// ── Admin — dynamic segments ───────────────────────────
 router.get(
 	"/admin/:id",
 	requireAuth,
@@ -52,7 +85,7 @@ router.delete(
 	ctrl.remove,
 );
 
-// Public detail (must be last to avoid capturing /admin)
+// ── Public detail (LAST — wildcard catch) ──────────────
 router.get(
 	"/:id",
 	validate({ params: z.object({ id: objectId }) }),
