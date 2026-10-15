@@ -41,12 +41,3 @@ export const listProductReviews = asyncHandler(
 		return ok(res, reviews);
 	},
 );
-
-export function importTemplate(
-	arg0: string,
-	requireAuth: (req: Request, _res: Response, next: NextFunction) => void,
-	requireAdmin: (req: Request, _res: Response, next: NextFunction) => void,
-	importTemplate: any,
-) {
-	throw new Error("Function not implemented.");
-}

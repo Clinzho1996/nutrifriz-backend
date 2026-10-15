@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
+import * as importCtrl from "../controllers/product-import.controller";
 import * as ctrl from "../controllers/product.controller";
 import { requireAuth } from "../middleware/auth";
 import { requireAdmin } from "../middleware/rbac";
@@ -15,7 +16,7 @@ import {
 const router = Router();
 const objectId = z.string().regex(/^[a-fA-F0-9]{24}$/);
 
-// CSV upload middleware for product import
+// CSV upload middleware — scoped to the product import route only
 const csvUpload = multer({
 	storage: multer.memoryStorage(),
 	limits: { fileSize: 10 * 1024 * 1024 },
@@ -38,21 +39,19 @@ router.get(
 	ctrl.listProductReviews,
 );
 
-// ── Admin — literal segments FIRST ─────────────────────
-// These MUST come before /admin/:id, otherwise Express
-// treats "import-template" as an id and fails validation.
+// ── Admin — import (literal segments BEFORE /admin/:id) ─
 router.get(
 	"/admin/import-template",
 	requireAuth,
 	requireAdmin,
-	ctrl.importTemplate,
+	importCtrl.importTemplate,
 );
 router.post(
 	"/admin/import",
 	requireAuth,
 	requireAdmin,
 	csvUpload.single("file"),
-	ctrl.importCsv,
+	importCtrl.importCsv,
 );
 
 // ── Admin — dynamic segments ───────────────────────────
