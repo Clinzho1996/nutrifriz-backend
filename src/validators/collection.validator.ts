@@ -36,7 +36,7 @@ export const updateCollectionSchema = createCollectionSchema.partial();
 
 export const listCollectionsQuerySchema = z.object({
 	page: z.coerce.number().int().positive().default(1),
-	limit: z.coerce.number().int().positive().max(100).default(20),
+	limit: z.coerce.number().int().positive().max(500).default(20),
 	status: z.enum(["draft", "published", "archived"]).optional(),
 	occasion: z.string().optional(),
 	q: z.string().optional(),
