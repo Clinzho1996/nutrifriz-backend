@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { asyncHandler } from "../utils/asyncHandler";
-import { ok, created, paginated } from "../utils/apiResponse";
 import * as journalService from "../services/journal.service";
+import { created, ok, paginated } from "../utils/apiResponse";
+import { asyncHandler } from "../utils/asyncHandler";
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
 	const query = req.query as any;
@@ -11,6 +11,11 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 
 export const getBySlug = asyncHandler(async (req: Request, res: Response) => {
 	const post = await journalService.getPostBySlug(req.params.slug);
+	return ok(res, post);
+});
+
+export const getById = asyncHandler(async (req: Request, res: Response) => {
+	const post = await journalService.getPostById(req.params.id);
 	return ok(res, post);
 });
 

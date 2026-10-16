@@ -1,5 +1,5 @@
 import { FilterQuery } from "mongoose";
-import { JournalPost, IJournalPost } from "../models/JournalPost";
+import { IJournalPost, JournalPost } from "../models/JournalPost";
 import { AppError } from "../utils/AppError";
 import { uniqueSlug } from "../utils/slugify";
 import { CreateJournalPostInput } from "../validators/journal.validator";
@@ -87,6 +87,14 @@ export async function getPostBySlug(slug: string, publicOnly = true) {
 	if (publicOnly) filter.status = "published";
 
 	const post = await JournalPost.findOne(filter)
+		.populate("relatedProductIds", "name slug images packSizes")
+		.lean();
+	if (!post) throw AppError.notFound("Post not found");
+	return post;
+}
+
+export async function getPostById(id: string) {
+	const post = await JournalPost.findById(id)
 		.populate("relatedProductIds", "name slug images packSizes")
 		.lean();
 	if (!post) throw AppError.notFound("Post not found");
