@@ -11,5 +11,6 @@ router.get("/overview", ctrl.overview);
 router.get("/top-products", ctrl.topProducts);
 router.get("/sales-trend", ctrl.salesTrend);
 router.get("/category-breakdown", ctrl.categoryBreakdown);
+router.get("/export", ctrl.exportTrendCsv);
 
 export default router;

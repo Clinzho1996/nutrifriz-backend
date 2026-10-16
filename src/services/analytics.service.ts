@@ -1,11 +1,36 @@
+import { B2BLead } from "../models/B2BLead";
+import { CrunchCard } from "../models/CrunchCard";
 import { Order } from "../models/Order";
 import { Product } from "../models/Product";
-import { User } from "../models/User";
-import { B2BLead } from "../models/B2BLead";
 import { Review } from "../models/Review";
-import { CrunchCard } from "../models/CrunchCard";
+import { User } from "../models/User";
 
-export async function getOverview() {
+export interface DateRange {
+	from?: string;
+	to?: string;
+}
+
+interface RangeFilter {
+	$gte?: Date;
+	$lte?: Date;
+}
+
+function buildRange(range?: DateRange): RangeFilter | undefined {
+	if (!range?.from && !range?.to) return undefined;
+	const r: RangeFilter = {};
+	if (range.from) r.$gte = new Date(range.from);
+	if (range.to) {
+		// Include the entire end day
+		const end = new Date(range.to);
+		end.setHours(23, 59, 59, 999);
+		r.$lte = end;
+	}
+	return r;
+}
+
+export async function getOverview(range?: DateRange) {
+	const createdAt = buildRange(range);
+
 	const [
 		revenueAgg,
 		paidOrderCount,
@@ -21,26 +46,43 @@ export async function getOverview() {
 			{
 				$match: {
 					status: { $in: ["paid", "processing", "shipped", "delivered"] },
+					...(createdAt ? { createdAt } : {}),
 				},
 			},
 			{ $group: { _id: null, total: { $sum: "$total" } } },
 		]),
 		Order.countDocuments({
 			status: { $in: ["paid", "processing", "shipped", "delivered"] },
+			...(createdAt ? { createdAt } : {}),
 		}),
-		Order.countDocuments({ status: "pending" }),
-		User.countDocuments({ role: "customer" }),
-		B2BLead.countDocuments({ status: "new" }),
-		Review.countDocuments({ status: "pending" }),
+		Order.countDocuments({
+			status: "pending",
+			...(createdAt ? { createdAt } : {}),
+		}),
+		User.countDocuments({
+			role: "customer",
+			...(createdAt ? { createdAt } : {}),
+		}),
+		B2BLead.countDocuments({
+			status: "new",
+			...(createdAt ? { createdAt } : {}),
+		}),
+		Review.countDocuments({
+			status: "pending",
+			...(createdAt ? { createdAt } : {}),
+		}),
 		Product.find({ "packSizes.stock": { $lt: 20 }, status: "published" })
 			.select("name slug packSizes")
 			.lean(),
-		CrunchCard.countDocuments({ status: "registered" }),
-		Order.find()
+		CrunchCard.countDocuments({
+			status: "registered",
+			...(createdAt ? { registeredAt: createdAt } : {}),
+		}),
+		Order.find(createdAt ? { createdAt } : {})
 			.sort({ createdAt: -1 })
 			.limit(10)
 			.select(
-				"orderNumber total status createdAt guestEmail shippingAddress.fullName",
+				"orderNumber total status createdAt guestEmail shippingAddress.fullName source",
 			)
 			.lean(),
 	]);
@@ -58,11 +100,13 @@ export async function getOverview() {
 	};
 }
 
-export async function getTopProducts(limit = 5) {
+export async function getTopProducts(limit = 5, range?: DateRange) {
+	const createdAt = buildRange(range);
 	return Order.aggregate([
 		{
 			$match: {
 				status: { $in: ["paid", "processing", "shipped", "delivered"] },
+				...(createdAt ? { createdAt } : {}),
 			},
 		},
 		{ $unwind: "$items" },
@@ -80,14 +124,19 @@ export async function getTopProducts(limit = 5) {
 	]);
 }
 
-export async function getSalesTrend(days = 30) {
-	const since = new Date();
-	since.setDate(since.getDate() - days);
+export async function getSalesTrend(range?: DateRange, defaultDays = 30) {
+	const createdAt =
+		buildRange(range) ??
+		(() => {
+			const since = new Date();
+			since.setDate(since.getDate() - defaultDays);
+			return { $gte: since };
+		})();
 
 	return Order.aggregate([
 		{
 			$match: {
-				createdAt: { $gte: since },
+				createdAt,
 				status: { $in: ["paid", "processing", "shipped", "delivered"] },
 			},
 		},
@@ -102,11 +151,13 @@ export async function getSalesTrend(days = 30) {
 	]);
 }
 
-export async function getCategoryBreakdown() {
+export async function getCategoryBreakdown(range?: DateRange) {
+	const createdAt = buildRange(range);
 	return Order.aggregate([
 		{
 			$match: {
 				status: { $in: ["paid", "processing", "shipped", "delivered"] },
+				...(createdAt ? { createdAt } : {}),
 			},
 		},
 		{ $unwind: "$items" },
@@ -118,4 +169,23 @@ export async function getCategoryBreakdown() {
 			},
 		},
 	]);
+}
+
+export interface AnalyticsExportRow {
+	date: string;
+	orders: number;
+	revenue: number;
+}
+
+export async function exportSalesTrendCsv(range?: DateRange): Promise<string> {
+	const trend = await getSalesTrend(range);
+	const rows: AnalyticsExportRow[] = trend.map((t) => ({
+		date: t._id,
+		orders: t.orders,
+		revenue: t.revenue,
+	}));
+
+	const header = "date,orders,revenue\n";
+	const body = rows.map((r) => `${r.date},${r.orders},${r.revenue}`).join("\n");
+	return header + body;
 }
