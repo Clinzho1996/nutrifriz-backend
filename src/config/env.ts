@@ -47,6 +47,12 @@ export const env = {
 		.map((o) => o.trim())
 		.filter(Boolean),
 
+	resend: {
+		apiKey: optional("RESEND_API_KEY"),
+		fromEmail: optional("RESEND_FROM_EMAIL", "hello@nutrifriz.com"),
+		fromName: optional("RESEND_FROM_NAME", "Nutrifriz"),
+	},
+
 	// Remove paystack block, add:
 
 	flutterwave: {

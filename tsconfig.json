@@ -6,6 +6,7 @@
 		"outDir": "./dist",
 		"rootDir": "./src",
 		"strict": true,
+		"jsx": "react-jsx",
 		"noImplicitAny": true,
 		"strictNullChecks": true,
 		"strictFunctionTypes": true,
@@ -32,9 +33,10 @@
 		"files": true,
 		"transpileOnly": false,
 		"compilerOptions": {
-			"module": "commonjs"
+			"module": "commonjs",
+			"jsx": "react-jsx"
 		}
 	},
-	"include": ["src/**/*.ts", "src/**/*.d.ts"],
+	"include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],
 	"exclude": ["node_modules", "dist"]
 }

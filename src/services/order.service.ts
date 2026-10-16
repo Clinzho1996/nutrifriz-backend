@@ -14,6 +14,7 @@ import {
 	ListOrdersQuery,
 } from "../validators/order.validator";
 import { recordAudit } from "./audit.service";
+import * as emailService from "./email.service";
 import { initializePayment } from "./flutterwave.service";
 
 interface BuiltCart {
@@ -173,6 +174,30 @@ export async function markOrderPaid(
 	order.history.push({ status: "paid", at: new Date() });
 
 	await order.save();
+
+	const recipientEmail =
+		order.guestEmail ??
+		(order.userId ? (await User.findById(order.userId).lean())?.email : null);
+	if (recipientEmail) {
+		await emailService.sendOrderConfirmationEmail({
+			to: recipientEmail,
+			orderNumber: order.orderNumber,
+			customerName: order.shippingAddress.fullName,
+			items: order.items.map((i) => ({
+				name: i.name,
+				qty: i.qty,
+				unitPrice: i.unitPrice,
+			})),
+			subtotal: order.subtotal,
+			shippingFee: order.shippingFee,
+			total: order.total,
+			shippingAddress: {
+				street: order.shippingAddress.street,
+				city: order.shippingAddress.city,
+				state: order.shippingAddress.state,
+			},
+		});
+	}
 
 	// Deduct stock for product lines
 	for (const item of order.items) {

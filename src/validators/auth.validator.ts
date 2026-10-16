@@ -17,6 +17,12 @@ export const refreshSchema = z.object({
 	refreshToken: z.string().min(10),
 });
 
+export const updateProfileSchema = z.object({
+	firstName: z.string().min(1).max(60).optional(),
+	lastName: z.string().min(1).max(60).optional(),
+	phone: z.string().min(7).max(20).optional(),
+});
+
 export const forgotPasswordSchema = z.object({
 	email: z.string().email().toLowerCase(),
 });
@@ -24,12 +30,6 @@ export const forgotPasswordSchema = z.object({
 export const resetPasswordSchema = z.object({
 	token: z.string().min(10),
 	password: z.string().min(8),
-});
-
-export const updateProfileSchema = z.object({
-	firstName: z.string().min(1).max(60).optional(),
-	lastName: z.string().min(1).max(60).optional(),
-	phone: z.string().min(7).max(20).optional(),
 });
 
 export const changePasswordSchema = z.object({

@@ -1,6 +1,10 @@
+import jwt from "jsonwebtoken";
 import { IUser, User } from "../models/User";
 import { IAddress } from "../types";
 import { AppError } from "../utils/AppError";
+import * as emailService from "./email.service";
+
+import { env } from "../config/env";
 import {
 	signAccessToken,
 	signRefreshToken,
@@ -43,6 +47,11 @@ export async function register(input: RegisterInput): Promise<AuthResult> {
 		lastName: input.lastName,
 		phone: input.phone,
 		role: "customer",
+	});
+
+	await emailService.sendWelcomeEmail({
+		to: user.email,
+		firstName: user.firstName,
 	});
 
 	const accessToken = signAccessToken({
@@ -209,4 +218,54 @@ export async function listUsers(query: {
 		limit: query.limit,
 		pages: Math.ceil(total / query.limit),
 	};
+}
+
+export async function requestPasswordReset(email: string) {
+	const user = await User.findOne({ email });
+	if (!user) {
+		// Don't leak that the email doesn't exist
+		return { success: true };
+	}
+
+	// Generate a JWT that expires in 30 minutes
+	const resetToken = jwt.sign(
+		{ sub: String(user._id), purpose: "password_reset" },
+		env.jwt.secret,
+		{ expiresIn: "30m" },
+	);
+
+	const resetUrl = `${env.storefrontUrl}/reset-password?token=${resetToken}`;
+
+	await emailService.sendPasswordResetEmail({
+		to: user.email,
+		firstName: user.firstName,
+		resetUrl,
+		expiresInMinutes: 30,
+	});
+
+	return { success: true };
+}
+
+export async function resetPassword(token: string, newPassword: string) {
+	let payload;
+	try {
+		payload = jwt.verify(token, env.jwt.secret) as {
+			sub: string;
+			purpose: string;
+		};
+	} catch {
+		throw AppError.badRequest("Invalid or expired reset token");
+	}
+
+	if (payload.purpose !== "password_reset") {
+		throw AppError.badRequest("Invalid token");
+	}
+
+	const user = await User.findById(payload.sub).select("+passwordHash");
+	if (!user) throw AppError.notFound("User not found");
+
+	user.passwordHash = await hashPassword(newPassword);
+	await user.save();
+
+	return { success: true };
 }

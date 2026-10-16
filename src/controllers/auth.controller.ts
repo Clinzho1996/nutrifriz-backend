@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { asyncHandler } from "../utils/asyncHandler";
-import { ok, created } from "../utils/apiResponse";
 import * as authService from "../services/auth.service";
+import { created, ok } from "../utils/apiResponse";
+import { asyncHandler } from "../utils/asyncHandler";
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
 	const result = await authService.register(req.body);
@@ -23,6 +23,26 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
 	const user = await authService.me(String(req.user!._id));
 	return ok(res, user);
 });
+
+export const forgotPassword = asyncHandler(
+	async (req: Request, res: Response) => {
+		const { email } = req.body;
+		await authService.requestPasswordReset(email);
+		return ok(
+			res,
+			{ success: true },
+			"If that email exists, a reset link has been sent.",
+		);
+	},
+);
+
+export const resetPassword = asyncHandler(
+	async (req: Request, res: Response) => {
+		const { token, password } = req.body;
+		await authService.resetPassword(token, password);
+		return ok(res, { success: true }, "Password updated");
+	},
+);
 
 export const updateProfile = asyncHandler(
 	async (req: Request, res: Response) => {

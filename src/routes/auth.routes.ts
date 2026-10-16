@@ -1,18 +1,20 @@
 import { Router } from "express";
+import { z } from "zod";
 import * as ctrl from "../controllers/auth.controller";
 import { requireAuth } from "../middleware/auth";
+import { authLimiter } from "../middleware/rateLimit";
 import { requireAdmin } from "../middleware/rbac";
 import { validate } from "../middleware/validate";
-import { authLimiter } from "../middleware/rateLimit";
 import {
-	registerSchema,
+	addressSchema,
+	changePasswordSchema,
+	forgotPasswordSchema,
 	loginSchema,
 	refreshSchema,
+	registerSchema,
+	resetPasswordSchema,
 	updateProfileSchema,
-	changePasswordSchema,
-	addressSchema,
 } from "../validators/auth.validator";
-import { z } from "zod";
 
 const router = Router();
 
@@ -24,6 +26,18 @@ router.post(
 );
 router.post("/login", authLimiter, validate({ body: loginSchema }), ctrl.login);
 router.post("/refresh", validate({ body: refreshSchema }), ctrl.refresh);
+router.post(
+	"/forgot-password",
+	authLimiter,
+	validate({ body: forgotPasswordSchema }),
+	ctrl.forgotPassword,
+);
+router.post(
+	"/reset-password",
+	authLimiter,
+	validate({ body: resetPasswordSchema }),
+	ctrl.resetPassword,
+);
 
 router.get("/me", requireAuth, ctrl.me);
 router.patch(
