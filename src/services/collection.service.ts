@@ -67,7 +67,7 @@ export async function listCollections(query: {
 	if (query.featured !== undefined) filter.isFeatured = query.featured;
 	if (query.q) filter.name = new RegExp(query.q, "i");
 
-	const [items, total] = await Promise.all([
+	const [rawItems, total] = await Promise.all([
 		Collection.find(filter)
 			.sort({ createdAt: -1 })
 			.skip((query.page - 1) * query.limit)
@@ -77,8 +77,17 @@ export async function listCollections(query: {
 		Collection.countDocuments(filter),
 	]);
 
+	// Compute price for each collection
+	const items = await Promise.all(
+		rawItems.map(async (c) => {
+			const sanitized = sanitizeItems(c);
+			const computedPrice = await computeCollectionPrice(c as any);
+			return { ...sanitized, computedPrice };
+		}),
+	);
+
 	return {
-		items: items.map(sanitizeItems),
+		items,
 		total,
 		page: query.page,
 		limit: query.limit,
