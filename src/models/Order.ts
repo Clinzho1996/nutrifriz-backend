@@ -11,7 +11,7 @@ export interface IOrderItem {
 }
 
 export interface IOrderPayment {
-	provider: "paystack" | "manual";
+	provider: "paystack" | "flutterwave" | "manual";
 	method?: "cash" | "transfer" | "pos" | "paystack" | "other";
 	reference: string;
 	status: PaymentStatus;
@@ -88,9 +88,9 @@ const PaymentSchema = new Schema<IOrderPayment>(
 	{
 		provider: {
 			type: String,
-			enum: ["paystack", "manual"],
+			enum: ["paystack", "flutterwave", "manual"],
 			required: true,
-			default: "paystack",
+			default: "flutterwave",
 		},
 		method: {
 			type: String,

@@ -1,17 +1,14 @@
-import { Router, raw } from "express";
-import { paystackWebhook } from "../controllers/webhook.controller";
+import { Router } from "express";
+import { flutterwaveWebhook } from "../controllers/webhook.controller";
 
 const router = Router();
 
-// We need the raw body to verify Paystack's HMAC signature
-router.post(
-	"/paystack",
-	raw({ type: "*/*" }),
-	(req, _res, next) => {
-		(req as any).rawBody = req.body;
-		next();
-	},
-	paystackWebhook,
-);
+// Flutterwave does not require the raw body (unlike Paystack's HMAC).
+// express.json() is already applied globally in app.ts, so this just works.
+router.post("/flutterwave", flutterwaveWebhook);
+
+// Keep the old Paystack route only if you still have pending orders.
+// Delete this once all Paystack orders are settled.
+// router.post('/paystack', paystackWebhook);
 
 export default router;

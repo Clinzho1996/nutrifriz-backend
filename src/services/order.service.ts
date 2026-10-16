@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { env } from "../config/env";
 import { Collection, ICollection } from "../models/Collection";
 import { MixConfig } from "../models/MixConfig";
 import { IOrder, IOrderItem, Order } from "../models/Order";
@@ -13,7 +14,7 @@ import {
 	ListOrdersQuery,
 } from "../validators/order.validator";
 import { recordAudit } from "./audit.service";
-import { initializeTransaction } from "./paystack.service";
+import { initializePayment } from "./flutterwave.service";
 
 interface BuiltCart {
 	items: IOrderItem[];
@@ -139,40 +140,22 @@ export async function createPendingOrder(
 		currency: "NGN",
 		shippingAddress: input.shippingAddress,
 		status: "pending",
-		payment: { provider: "paystack", reference, status: "init" },
+		payment: { provider: "flutterwave", reference, status: "init" },
 		history: [{ status: "pending", at: new Date() }],
 	});
 
-	const init = await initializeTransaction({
+	const init = await initializePayment({
 		email: input.email,
 		amountNaira: total,
 		reference,
-		metadata: {
-			orderId: String(order._id),
-			orderNumber,
-			custom_fields: [
-				{
-					display_name: "Order Number",
-					variable_name: "order_number",
-					value: orderNumber,
-				},
-			],
-		},
+		metadata: { orderId: String(order._id), orderNumber },
+		redirectUrl: `${env.storefrontUrl}/checkout/verify`,
 	});
 
-	// attach authorization_url temporarily to raw
-	order.payment.raw = { authorization_url: init.authorization_url };
+	order.payment.raw = { authorization_url: init.link };
 	await order.save();
 
-	await recordAudit({
-		actorId: userId,
-		action: "order.init",
-		entity: "Order",
-		entityId: String(order._id),
-		after: { orderNumber, total },
-	});
-
-	return { order, paymentLink: init.authorization_url };
+	return { order, paymentLink: init.link };
 }
 
 export async function markOrderPaid(

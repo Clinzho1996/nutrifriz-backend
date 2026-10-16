@@ -3,6 +3,8 @@ import path from "path";
 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
+const storefrontUrl = process.env.STOREFRONT_URL ?? "http://localhost:3000";
+
 function required(key: string): string {
 	const value = process.env[key];
 	if (!value || value.trim() === "") {
@@ -45,13 +47,21 @@ export const env = {
 		.map((o) => o.trim())
 		.filter(Boolean),
 
-	paystack: {
-		secretKey: optional("PAYSTACK_SECRET_KEY"),
-		publicKey: optional("PAYSTACK_PUBLIC_KEY"),
-		baseUrl: optional("PAYSTACK_BASE_URL", "https://api.paystack.co"),
+	// Remove paystack block, add:
+
+	flutterwave: {
+		publicKey: optional("FLUTTERWAVE_PUBLIC_KEY"),
+		secretKey: optional("FLUTTERWAVE_SECRET_KEY"),
+		encryptionKey: optional("FLUTTERWAVE_ENCRYPTION_KEY"),
+		webhookSecretHash: optional("FLUTTERWAVE_WEBHOOK_HASH"),
+		baseUrl: optional("FLUTTERWAVE_BASE_URL", "https://api.flutterwave.com/v3"),
+		redirectUrl: optional(
+			"FLUTTERWAVE_REDIRECT_URL",
+			`${storefrontUrl}/checkout/verify`,
+		),
 	},
 
-	storefrontUrl: optional("STOREFRONT_URL", "http://localhost:3000"),
+	storefrontUrl,
 
 	cloudinary: {
 		cloudName: optional("CLOUDINARY_CLOUD_NAME"),

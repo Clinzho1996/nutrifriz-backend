@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { asyncHandler } from "../utils/asyncHandler";
-import { ok, created } from "../utils/apiResponse";
+import { verifyTransaction } from "../services/flutterwave.service";
 import * as orderService from "../services/order.service";
-import { verifyTransaction } from "../services/paystack.service";
+import { created, ok } from "../utils/apiResponse";
+import { asyncHandler } from "../utils/asyncHandler";
 
 export const initCheckout = asyncHandler(
 	async (req: Request, res: Response) => {
@@ -31,15 +31,18 @@ export const verifyCheckout = asyncHandler(
 		const data = await verifyTransaction(reference);
 
 		let order = null;
-		if (data.status === "success") {
+		if (data.status === "successful") {
 			order = await orderService.markOrderPaid(reference, data as any);
+		} else if (data.status === "failed") {
+			await orderService.markOrderFailed(reference, data as any);
 		}
 
 		return ok(res, {
-			paystack: {
+			flutterwave: {
 				status: data.status,
 				amount: data.amount,
 				currency: data.currency,
+				flwRef: data.flw_ref,
 			},
 			order,
 		});
