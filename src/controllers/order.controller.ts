@@ -19,6 +19,14 @@ export const getByNumber = asyncHandler(async (req: Request, res: Response) => {
 	return ok(res, order);
 });
 
+export const getMyOrder = asyncHandler(async (req: Request, res: Response) => {
+	const order = await orderService.getMyOrderById(
+		String(req.user!._id),
+		req.params.id,
+	);
+	return ok(res, order);
+});
+
 export const createManual = asyncHandler(
 	async (req: Request, res: Response) => {
 		const order = await orderService.createManualOrder(

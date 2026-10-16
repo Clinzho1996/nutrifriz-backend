@@ -362,6 +362,26 @@ export async function getOrderByNumber(orderNumber: string) {
 	return order;
 }
 
+export async function getMyOrderById(userId: string, orderId: string) {
+	const order = await Order.findById(orderId).lean();
+	if (!order) throw AppError.notFound("Order not found");
+
+	// Ownership check
+	const isOwner = order.userId && String(order.userId) === String(userId);
+
+	// Also allow guest orders where the customer later registered with the same email
+	const isGuestOwner =
+		!order.userId &&
+		order.guestEmail &&
+		order.guestEmail === (await User.findById(userId).lean())?.email;
+
+	if (!isOwner && !isGuestOwner) {
+		throw AppError.forbidden("You do not have access to this order");
+	}
+
+	return order;
+}
+
 export async function listOrders(query: ListOrdersQuery) {
 	const filter: Record<string, unknown> = {};
 	if (query.status) filter.status = query.status;

@@ -39,6 +39,15 @@ router.get(
 	requireAdmin,
 	ctrl.getByNumber,
 );
+// Customer — own orders only
+router.get("/me", requireAuth, ctrl.myOrders);
+router.get(
+	"/me/:id",
+	requireAuth,
+	validate({ params: z.object({ id: objectId }) }),
+	ctrl.getMyOrder,
+);
+
 router.get(
 	"/admin/:id",
 	requireAuth,
