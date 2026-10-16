@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const listCustomersQuerySchema = z.object({
 	page: z.coerce.number().int().positive().default(1),
-	limit: z.coerce.number().int().positive().max(200).default(20),
+	limit: z.coerce.number().int().positive().max(500).default(20),
 	q: z.string().optional(),
 	role: z.enum(["customer", "b2b", "staff", "admin"]).optional(),
 	from: z.string().optional(),
