@@ -68,3 +68,17 @@ export const myOrders = asyncHandler(async (req: Request, res: Response) => {
 	);
 	return ok(res, mine);
 });
+
+export const confirmPayment = asyncHandler(
+	async (req: Request, res: Response) => {
+		const { receiptNote, receiptProofUrl } = req.body;
+
+		const order = await orderService.confirmBankTransfer(
+			req.params.id,
+			String(req.user!._id),
+			{ receiptNote, receiptProofUrl },
+		);
+
+		return ok(res, order, "Payment confirmed — order is now paid");
+	},
+);

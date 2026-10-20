@@ -26,6 +26,19 @@ router.post(
 	ctrl.createManual,
 );
 
+router.post(
+	"/admin/:id/confirm-payment",
+	requireAuth,
+	requireAdmin,
+	validate({
+		params: z.object({ id: z.string().regex(/^[a-fA-F0-9]{24}$/) }),
+		body: z.object({
+			receiptNote: z.string().max(300).optional(),
+			receiptProofUrl: z.string().optional(),
+		}),
+	}),
+	ctrl.confirmPayment,
+);
 router.get(
 	"/admin",
 	requireAuth,

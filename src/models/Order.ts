@@ -11,11 +11,20 @@ export interface IOrderItem {
 }
 
 export interface IOrderPayment {
-	provider: "paystack" | "flutterwave" | "manual";
-	method?: "cash" | "transfer" | "pos" | "paystack" | "other";
+	provider: "paystack" | "flutterwave" | "manual" | "transfer_manual";
+	method?:
+		| "cash"
+		| "transfer"
+		| "pos"
+		| "paystack"
+		| "flutterwave"
+		| "other"
+		| "bank_transfer";
 	reference: string;
 	status: PaymentStatus;
 	paidAt?: Date;
+	receiptProofUrl?: string; // NEW — uploaded by admin when confirming
+	receiptNote?: string; // NEW — free-form reference (e.g. transfer narration)
 	raw?: Record<string, unknown>;
 }
 
@@ -88,13 +97,21 @@ const PaymentSchema = new Schema<IOrderPayment>(
 	{
 		provider: {
 			type: String,
-			enum: ["paystack", "flutterwave", "manual"],
+			enum: ["paystack", "flutterwave", "manual", "transfer_manual"],
 			required: true,
-			default: "flutterwave",
+			default: "transfer_manual",
 		},
 		method: {
 			type: String,
-			enum: ["cash", "transfer", "pos", "paystack", "other"],
+			enum: [
+				"cash",
+				"transfer",
+				"pos",
+				"paystack",
+				"flutterwave",
+				"other",
+				"bank_transfer",
+			],
 		},
 		reference: { type: String, required: true, index: true, unique: true },
 		status: {
@@ -103,6 +120,8 @@ const PaymentSchema = new Schema<IOrderPayment>(
 			default: "init",
 		},
 		paidAt: Date,
+		receiptProofUrl: { type: String },
+		receiptNote: { type: String, maxlength: 300 },
 		raw: { type: Schema.Types.Mixed },
 	},
 	{ _id: false },

@@ -1,23 +1,15 @@
 import { Request, Response } from "express";
-import { User } from "../models/User";
-import { verifyTransaction } from "../services/flutterwave.service";
 import * as orderService from "../services/order.service";
-import { created, ok } from "../utils/apiResponse";
-import { AppError } from "../utils/AppError";
+import { created } from "../utils/apiResponse";
 import { asyncHandler } from "../utils/asyncHandler";
 
 export const initCheckout = asyncHandler(
 	async (req: Request, res: Response) => {
 		const userId = String(req.user!._id);
 
-		// Look up the user to get their email — required for Flutterwave
-		const user = await User.findById(userId).lean();
-		if (!user) throw AppError.unauthorized("User not found");
-		if (!user.email) throw AppError.badRequest("User has no email on file");
-
-		const { order, paymentLink } = await orderService.createPendingOrder(
+		const { order } = await orderService.createPendingOrder(
 			userId,
-			user.email,
+			(req.user as any).email,
 			req.body,
 		);
 
@@ -28,33 +20,39 @@ export const initCheckout = asyncHandler(
 				orderNumber: order.orderNumber,
 				reference: order.payment.reference,
 				total: order.total,
-				paymentLink,
+				// Bank details are static — the storefront also has them, but sending
+				// them here lets the WhatsApp message format use them without duplication.
+				bankDetails: {
+					bank: "Opay",
+					accountNumber: "6427368778",
+					accountName: "Nutrifriz Limited",
+				},
+				whatsappUrl: buildWhatsAppUrl(order),
 			},
-			"Checkout initialized",
+			"Order created — proceed with bank transfer",
 		);
 	},
 );
 
-export const verifyCheckout = asyncHandler(
-	async (req: Request, res: Response) => {
-		const { reference } = req.params;
-		const data = await verifyTransaction(reference);
+/**
+ * Build the WhatsApp deep link with a prefilled message containing the
+ * order summary. The customer clicks this, WhatsApp opens with the message
+ * ready — they attach the receipt and hit send.
+ */
+function buildWhatsAppUrl(order: any): string {
+	const phone = "2349072300904";
+	const orderNum = order.orderNumber;
+	const amount = order.total.toLocaleString("en-NG");
+	const items = order.items
+		.map((i: any) => `• ${i.name} × ${i.qty}`)
+		.join("\n");
 
-		let order = null;
-		if (data.status === "successful") {
-			order = await orderService.markOrderPaid(reference, data as any);
-		} else if (data.status === "failed") {
-			await orderService.markOrderFailed(reference, data as any);
-		}
+	const message =
+		`Hello Nutrifriz! I've made a bank transfer for my order.\n\n` +
+		`Order: ${orderNum}\n` +
+		`Amount: ₦${amount}\n\n` +
+		`Items:\n${items}\n\n` +
+		`I'll attach my payment receipt here. Thank you!`;
 
-		return ok(res, {
-			flutterwave: {
-				status: data.status,
-				amount: data.amount,
-				currency: data.currency,
-				flwRef: data.flw_ref,
-			},
-			order,
-		});
-	},
-);
+	return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}

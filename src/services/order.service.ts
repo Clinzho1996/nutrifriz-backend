@@ -14,7 +14,6 @@ import {
 } from "../validators/order.validator";
 import { recordAudit } from "./audit.service";
 import * as emailService from "./email.service";
-import { initializePayment } from "./flutterwave.service";
 
 async function getOrderRecipientEmail(order: IOrder): Promise<string | null> {
 	if (order.userId) {
@@ -127,22 +126,26 @@ async function computeCollectionPriceFor(
 	return Math.round(total * (1 - discount / 100));
 }
 
+/**
+ * Create a pending order awaiting a manual bank transfer.
+ * No payment gateway is contacted. The order is created with
+ * payment.status = 'init' and stays pending until an admin marks it paid.
+ */
 export async function createPendingOrder(
 	userId: string,
 	userEmail: string,
 	input: CheckoutInitInput,
-): Promise<{ order: IOrder; paymentLink: string }> {
+): Promise<{ order: IOrder }> {
 	const { items, subtotal } = await buildCartItems(input.items);
 	const shippingFee = input.shippingFee ?? 0;
 	const total = subtotal + shippingFee;
 
 	const orderNumber = await nextOrderNumber(Order);
-	const reference = `NFR_${orderNumber}_${Date.now()}`;
+	const reference = `BANK_${orderNumber}_${Date.now()}`;
 
 	const order = await Order.create({
 		orderNumber,
-		userId: new Types.ObjectId(userId), // always set
-		// guestEmail: not used anymore
+		userId: new Types.ObjectId(userId),
 		items,
 		subtotal,
 		shippingFee,
@@ -150,39 +153,30 @@ export async function createPendingOrder(
 		currency: "NGN",
 		shippingAddress: input.shippingAddress,
 		status: "pending",
-		payment: { provider: "flutterwave", reference, status: "init" },
-		history: [{ status: "pending", at: new Date() }],
-	});
-
-	const init = await initializePayment({
-		email: userEmail,
-		amountNaira: total,
-		reference,
-		metadata: {
-			orderId: String(order._id),
-			orderNumber,
-			custom_fields: [
-				{
-					display_name: "Order Number",
-					variable_name: "order_number",
-					value: orderNumber,
-				},
-			],
+		payment: {
+			provider: "transfer_manual",
+			method: "bank_transfer",
+			reference,
+			status: "init",
 		},
+		history: [
+			{
+				status: "pending",
+				at: new Date(),
+				note: "Order created — awaiting bank transfer",
+			},
+		],
 	});
-
-	order.payment.raw = { authorization_url: init.link };
-	await order.save();
 
 	await recordAudit({
 		actorId: userId,
 		action: "order.init",
 		entity: "Order",
 		entityId: String(order._id),
-		after: { orderNumber, total },
+		after: { orderNumber, total, method: "bank_transfer" },
 	});
 
-	return { order, paymentLink: init.link };
+	return { order };
 }
 
 export async function markOrderPaid(
@@ -589,5 +583,107 @@ export async function updateFulfilment(
 		order.fulfilment.shippedAt = new Date();
 	}
 	await order.save();
+	return order;
+}
+
+export async function confirmBankTransfer(
+	orderId: string,
+	actorId: string,
+	input: { receiptNote?: string; receiptProofUrl?: string },
+): Promise<IOrder> {
+	const order = await Order.findById(orderId);
+	if (!order) throw AppError.notFound("Order not found");
+
+	if (order.payment.status === "success") {
+		throw AppError.badRequest("Payment is already confirmed");
+	}
+	if (order.status !== "pending") {
+		throw AppError.badRequest(
+			`Cannot confirm payment on a ${order.status} order`,
+		);
+	}
+
+	order.payment.status = "success";
+	order.payment.paidAt = new Date();
+	order.payment.receiptNote = input.receiptNote;
+	order.payment.receiptProofUrl = input.receiptProofUrl;
+	order.status = "paid";
+	order.history.push({
+		status: "paid",
+		at: new Date(),
+		by: new Types.ObjectId(actorId),
+		note: input.receiptNote
+			? `Bank transfer confirmed — ${input.receiptNote}`
+			: "Bank transfer confirmed",
+	});
+	await order.save();
+
+	// Deduct stock now that payment is confirmed
+	for (const item of order.items) {
+		if (item.kind === "product") {
+			const packSize = (item.meta as any)?.packSize;
+			if (!packSize) continue;
+			await Product.updateOne(
+				{ _id: item.refId, "packSizes.size": packSize },
+				{ $inc: { "packSizes.$.stock": -item.qty } },
+			);
+		}
+		if (item.kind === "mix") {
+			await MixConfig.findByIdAndUpdate(item.refId, { status: "ordered" });
+		}
+	}
+
+	// Award crunch points
+	if (order.userId) {
+		const points = Math.floor(order.total / 1000);
+		if (points > 0) {
+			await User.findByIdAndUpdate(order.userId, {
+				$inc: { crunchPoints: points },
+			});
+		}
+	}
+
+	// Send the order confirmation email (same as markOrderPaid did)
+	const recipient = await getOrderRecipientEmail(order);
+	if (recipient) {
+		const customerName = order.shippingAddress?.fullName || "there";
+		void (async () => {
+			try {
+				const emailService = await import("./email.service");
+				await emailService.sendOrderConfirmationEmail({
+					to: recipient,
+					orderNumber: order.orderNumber,
+					customerName,
+					items: order.items.map((i: any) => ({
+						name: i.name,
+						qty: i.qty,
+						unitPrice: i.unitPrice,
+					})),
+					subtotal: order.subtotal,
+					shippingFee: order.shippingFee,
+					total: order.total,
+					shippingAddress: {
+						street: order.shippingAddress.street,
+						city: order.shippingAddress.city,
+						state: order.shippingAddress.state,
+					},
+				});
+			} catch {
+				// swallowed — email never blocks the business operation
+			}
+		})();
+	}
+
+	await recordAudit({
+		actorId,
+		action: "order.payment.confirm",
+		entity: "Order",
+		entityId: String(order._id),
+		after: {
+			reference: order.payment.reference,
+			receiptNote: input.receiptNote,
+		},
+	});
+
 	return order;
 }
