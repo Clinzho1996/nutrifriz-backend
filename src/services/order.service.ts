@@ -1,5 +1,4 @@
 import { Types } from "mongoose";
-import { env } from "../config/env";
 import { Collection, ICollection } from "../models/Collection";
 import { MixConfig } from "../models/MixConfig";
 import { IOrder, IOrderItem, Order } from "../models/Order";
@@ -120,43 +119,57 @@ async function computeCollectionPriceFor(
 }
 
 export async function createPendingOrder(
-	userId: string | undefined,
-	input: CheckoutInitInput,
+  userId: string,
+  userEmail: string,
+  input: CheckoutInitInput
 ): Promise<{ order: IOrder; paymentLink: string }> {
-	const { items, subtotal } = await buildCartItems(input.items);
-	const shippingFee = input.shippingFee ?? 0;
-	const total = subtotal + shippingFee;
+  const { items, subtotal } = await buildCartItems(input.items);
+  const shippingFee = input.shippingFee ?? 0;
+  const total = subtotal + shippingFee;
 
-	const orderNumber = await nextOrderNumber(Order);
-	const reference = `NFZ_${orderNumber}_${Date.now()}`;
+  const orderNumber = await nextOrderNumber(Order);
+  const reference = `NFR_${orderNumber}_${Date.now()}`;
 
-	const order = await Order.create({
-		orderNumber,
-		userId: userId ? new Types.ObjectId(userId) : undefined,
-		guestEmail: userId ? undefined : input.email,
-		items,
-		subtotal,
-		shippingFee,
-		total,
-		currency: "NGN",
-		shippingAddress: input.shippingAddress,
-		status: "pending",
-		payment: { provider: "flutterwave", reference, status: "init" },
-		history: [{ status: "pending", at: new Date() }],
-	});
+  const order = await Order.create({
+    orderNumber,
+    userId: new Types.ObjectId(userId),   // always set
+    // guestEmail: not used anymore
+    items,
+    subtotal,
+    shippingFee,
+    total,
+    currency: 'NGN',
+    shippingAddress: input.shippingAddress,
+    status: 'pending',
+    payment: { provider: 'flutterwave', reference, status: 'init' },
+    history: [{ status: 'pending', at: new Date() }],
+  });
 
-	const init = await initializePayment({
-		email: input.email,
-		amountNaira: total,
-		reference,
-		metadata: { orderId: String(order._id), orderNumber },
-		redirectUrl: `${env.storefrontUrl}/checkout/verify`,
-	});
+  const init = await initializePayment({
+    email: userEmail,
+    amountNaira: total,
+    reference,
+    metadata: {
+      orderId: String(order._id),
+      orderNumber,
+      custom_fields: [
+        { display_name: 'Order Number', variable_name: 'order_number', value: orderNumber },
+      ],
+    },
+  });
 
-	order.payment.raw = { authorization_url: init.link };
-	await order.save();
+  order.payment.raw = { authorization_url: init.link };
+  await order.save();
 
-	return { order, paymentLink: init.link };
+  await recordAudit({
+    actorId: userId,
+    action: 'order.init',
+    entity: 'Order',
+    entityId: String(order._id),
+    after: { orderNumber, total },
+  });
+
+  return { order, paymentLink: init.link };
 }
 
 export async function markOrderPaid(

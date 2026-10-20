@@ -33,7 +33,6 @@ const cartItemSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const checkoutInitSchema = z.object({
-	email: z.string().email().toLowerCase(),
 	items: z.array(cartItemSchema).min(1),
 	shippingAddress: addressSchema,
 	shippingFee: z.number().nonnegative().default(0),

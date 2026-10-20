@@ -1,18 +1,19 @@
 import { Router } from "express";
+import { z } from "zod";
 import * as ctrl from "../controllers/checkout.controller";
-import { optionalAuth } from "../middleware/auth";
+import { requireAuth } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { checkoutInitSchema } from "../validators/order.validator";
-import { z } from "zod";
 
 const router = Router();
 
 router.post(
 	"/init",
-	optionalAuth,
+	requireAuth,
 	validate({ body: checkoutInitSchema }),
 	ctrl.initCheckout,
 );
+
 router.get(
 	"/verify/:reference",
 	validate({ params: z.object({ reference: z.string().min(5) }) }),

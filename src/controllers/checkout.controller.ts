@@ -1,16 +1,26 @@
 import { Request, Response } from "express";
+import { User } from "../models/User";
 import { verifyTransaction } from "../services/flutterwave.service";
 import * as orderService from "../services/order.service";
 import { created, ok } from "../utils/apiResponse";
+import { AppError } from "../utils/AppError";
 import { asyncHandler } from "../utils/asyncHandler";
 
 export const initCheckout = asyncHandler(
 	async (req: Request, res: Response) => {
-		const userId = req.user ? String(req.user._id) : undefined;
+		const userId = String(req.user!._id);
+
+		// Look up the user to get their email — required for Flutterwave
+		const user = await User.findById(userId).lean();
+		if (!user) throw AppError.unauthorized("User not found");
+		if (!user.email) throw AppError.badRequest("User has no email on file");
+
 		const { order, paymentLink } = await orderService.createPendingOrder(
 			userId,
+			user.email,
 			req.body,
 		);
+
 		return created(
 			res,
 			{
