@@ -13,6 +13,7 @@ import mixRoutes from "./mix.routes";
 import orderRoutes from "./order.routes";
 import productRoutes from "./product.routes";
 import reviewRoutes from "./review.routes";
+import shopRoutes from "./shop.routes";
 import uploadRoutes from "./upload.routes";
 import webhookRoutes from "./webhook.routes";
 
@@ -29,6 +30,7 @@ router.use("/checkout", checkoutRoutes);
 router.use("/orders", orderRoutes);
 router.use("/reviews", reviewRoutes);
 router.use("/journal", journalRoutes);
+router.use("/shop", shopRoutes);
 router.use("/b2b", b2bRoutes);
 router.use("/journal-categories", journalCategoryRoutes);
 router.use("/cards", cardRoutes);
