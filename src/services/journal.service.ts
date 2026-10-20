@@ -1,4 +1,5 @@
 import { FilterQuery } from "mongoose";
+import { JournalCategory } from "../models/JournalCategory";
 import { IJournalPost, JournalPost } from "../models/JournalPost";
 import { AppError } from "../utils/AppError";
 import { uniqueSlug } from "../utils/slugify";
@@ -46,6 +47,20 @@ export async function deletePost(id: string): Promise<void> {
 	await post.save();
 }
 
+/**
+ * Fetch a map of category slug → display name for the given slugs.
+ * Returns a plain object so it can be JSON-serialized easily.
+ */
+async function getCategoryNameMap(
+	slugs: string[],
+): Promise<Record<string, string>> {
+	if (slugs.length === 0) return {};
+	const cats = await JournalCategory.find({ slug: { $in: slugs } })
+		.select("slug name")
+		.lean();
+	return Object.fromEntries(cats.map((c) => [c.slug, c.name]));
+}
+
 export async function listPosts(query: {
 	page: number;
 	limit: number;
@@ -56,12 +71,13 @@ export async function listPosts(query: {
 	const filter: FilterQuery<IJournalPost> = {};
 	if (query.category) filter.category = query.category;
 	if (query.status) filter.status = query.status;
-	if (query.q)
+	if (query.q) {
 		filter.$or = [
 			{ title: new RegExp(query.q, "i") },
 			{ excerpt: new RegExp(query.q, "i") },
 			{ tags: new RegExp(query.q, "i") },
 		];
+	}
 
 	const [items, total] = await Promise.all([
 		JournalPost.find(filter)
@@ -73,8 +89,15 @@ export async function listPosts(query: {
 		JournalPost.countDocuments(filter),
 	]);
 
+	// Attach category names
+	const slugs = Array.from(new Set(items.map((p) => p.category)));
+	const nameMap = await getCategoryNameMap(slugs);
+
 	return {
-		items,
+		items: items.map((p) => ({
+			...p,
+			categoryName: nameMap[p.category] ?? p.category,
+		})),
 		total,
 		page: query.page,
 		limit: query.limit,
@@ -90,13 +113,21 @@ export async function getPostBySlug(slug: string, publicOnly = true) {
 		.populate("relatedProductIds", "name slug images packSizes")
 		.lean();
 	if (!post) throw AppError.notFound("Post not found");
-	return post;
+
+	const nameMap = await getCategoryNameMap([post.category]);
+	return {
+		...post,
+		categoryName: nameMap[post.category] ?? post.category,
+	};
 }
 
 export async function getPostById(id: string) {
-	const post = await JournalPost.findById(id)
-		.populate("relatedProductIds", "name slug images packSizes")
-		.lean();
+	const post = await JournalPost.findById(id).lean();
 	if (!post) throw AppError.notFound("Post not found");
-	return post;
+
+	const nameMap = await getCategoryNameMap([post.category]);
+	return {
+		...post,
+		categoryName: nameMap[post.category] ?? post.category,
+	};
 }
