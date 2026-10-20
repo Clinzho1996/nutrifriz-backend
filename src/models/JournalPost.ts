@@ -1,21 +1,12 @@
 import { Document, Model, Schema, Types, model } from "mongoose";
 
-export type JournalCategory =
-	| "Healthy Snacking"
-	| "Nutrition"
-	| "Recipes"
-	| "Freeze-Drying"
-	| "Food Sustainability"
-	| "African Agriculture"
-	| "Food Innovation";
-
 export interface IJournalPost extends Document {
 	_id: Types.ObjectId;
 	slug: string;
 	title: string;
 	excerpt: string;
 	body: string;
-	category: JournalCategory;
+	category: string;
 	coverImage: string;
 	seo: { title?: string; description?: string };
 	relatedProductIds: Types.ObjectId[];
@@ -41,17 +32,10 @@ const JournalPostSchema = new Schema<IJournalPost>(
 		body: { type: String, required: true },
 		category: {
 			type: String,
-			enum: [
-				"Healthy Snacking",
-				"Nutrition",
-				"Recipes",
-				"Freeze-Drying",
-				"Food Sustainability",
-				"African Agriculture",
-				"Food Innovation",
-			],
 			required: true,
+			trim: true,
 			index: true,
+			// Stores the slug of a JournalCategory, e.g. "food-and-everyday-living"
 		},
 		coverImage: { type: String, default: "" },
 		seo: {
