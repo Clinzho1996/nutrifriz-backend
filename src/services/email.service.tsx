@@ -2,7 +2,12 @@ import { render } from "react-email";
 import { Resend } from "resend";
 import { env } from "../config/env";
 import { logger } from "../config/logger";
+import { OrderCancelledEmail } from "../emails/templates/order-cancelled";
 import { OrderConfirmationEmail } from "../emails/templates/order-confirmation";
+import { OrderDeliveredEmail } from "../emails/templates/order-delivered";
+import { OrderProcessingEmail } from "../emails/templates/order-processing";
+import { OrderRefundedEmail } from "../emails/templates/order-refunded";
+import { OrderShippedEmail } from "../emails/templates/order-shipped";
 import { PasswordResetEmail } from "../emails/templates/password-reset";
 import { WelcomeEmail } from "../emails/templates/welcome";
 
@@ -45,6 +50,104 @@ async function sendSafe(params: {
 		logger.error({ err, to: params.to }, "Resend threw");
 		return null;
 	}
+}
+
+export async function sendOrderProcessingEmail(params: {
+	to: string;
+	orderNumber: string;
+	customerName: string;
+}) {
+	const html = await render(
+		<OrderProcessingEmail
+			orderNumber={params.orderNumber}
+			customerName={params.customerName}
+		/>,
+	);
+	return sendSafe({
+		to: params.to,
+		subject: `Preparing your order ${params.orderNumber}`,
+		html,
+	});
+}
+
+export async function sendOrderShippedEmail(params: {
+	to: string;
+	orderNumber: string;
+	customerName: string;
+	courier?: string;
+	trackingNo?: string;
+}) {
+	const html = await render(
+		<OrderShippedEmail
+			orderNumber={params.orderNumber}
+			customerName={params.customerName}
+			courier={params.courier}
+			trackingNo={params.trackingNo}
+		/>,
+	);
+	return sendSafe({
+		to: params.to,
+		subject: `Order ${params.orderNumber} has shipped`,
+		html,
+	});
+}
+
+export async function sendOrderDeliveredEmail(params: {
+	to: string;
+	orderNumber: string;
+	customerName: string;
+}) {
+	const html = await render(
+		<OrderDeliveredEmail
+			orderNumber={params.orderNumber}
+			customerName={params.customerName}
+		/>,
+	);
+	return sendSafe({
+		to: params.to,
+		subject: `Order ${params.orderNumber} delivered`,
+		html,
+	});
+}
+
+export async function sendOrderCancelledEmail(params: {
+	to: string;
+	orderNumber: string;
+	customerName: string;
+	reason?: string;
+}) {
+	const html = await render(
+		<OrderCancelledEmail
+			orderNumber={params.orderNumber}
+			customerName={params.customerName}
+			reason={params.reason}
+		/>,
+	);
+	return sendSafe({
+		to: params.to,
+		subject: `Order ${params.orderNumber} cancelled`,
+		html,
+	});
+}
+
+export async function sendOrderRefundedEmail(params: {
+	to: string;
+	orderNumber: string;
+	customerName: string;
+	amount: number;
+}) {
+	const html = await render(
+		<OrderRefundedEmail
+			orderNumber={params.orderNumber}
+			customerName={params.customerName}
+			amount={params.amount}
+		/>,
+	);
+	return sendSafe({
+		to: params.to,
+		subject: `Refund issued for order ${params.orderNumber}`,
+		html,
+	});
 }
 
 export async function sendWelcomeEmail(params: {

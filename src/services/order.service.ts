@@ -16,6 +16,15 @@ import { recordAudit } from "./audit.service";
 import * as emailService from "./email.service";
 import { initializePayment } from "./flutterwave.service";
 
+async function getOrderRecipientEmail(order: IOrder): Promise<string | null> {
+	if (order.userId) {
+		const user = await User.findById(order.userId).select("email").lean();
+		if (user?.email) return user.email;
+	}
+	if (order.guestEmail) return order.guestEmail;
+	return null;
+}
+
 interface BuiltCart {
 	items: IOrderItem[];
 	subtotal: number;
@@ -119,57 +128,61 @@ async function computeCollectionPriceFor(
 }
 
 export async function createPendingOrder(
-  userId: string,
-  userEmail: string,
-  input: CheckoutInitInput
+	userId: string,
+	userEmail: string,
+	input: CheckoutInitInput,
 ): Promise<{ order: IOrder; paymentLink: string }> {
-  const { items, subtotal } = await buildCartItems(input.items);
-  const shippingFee = input.shippingFee ?? 0;
-  const total = subtotal + shippingFee;
+	const { items, subtotal } = await buildCartItems(input.items);
+	const shippingFee = input.shippingFee ?? 0;
+	const total = subtotal + shippingFee;
 
-  const orderNumber = await nextOrderNumber(Order);
-  const reference = `NFR_${orderNumber}_${Date.now()}`;
+	const orderNumber = await nextOrderNumber(Order);
+	const reference = `NFR_${orderNumber}_${Date.now()}`;
 
-  const order = await Order.create({
-    orderNumber,
-    userId: new Types.ObjectId(userId),   // always set
-    // guestEmail: not used anymore
-    items,
-    subtotal,
-    shippingFee,
-    total,
-    currency: 'NGN',
-    shippingAddress: input.shippingAddress,
-    status: 'pending',
-    payment: { provider: 'flutterwave', reference, status: 'init' },
-    history: [{ status: 'pending', at: new Date() }],
-  });
+	const order = await Order.create({
+		orderNumber,
+		userId: new Types.ObjectId(userId), // always set
+		// guestEmail: not used anymore
+		items,
+		subtotal,
+		shippingFee,
+		total,
+		currency: "NGN",
+		shippingAddress: input.shippingAddress,
+		status: "pending",
+		payment: { provider: "flutterwave", reference, status: "init" },
+		history: [{ status: "pending", at: new Date() }],
+	});
 
-  const init = await initializePayment({
-    email: userEmail,
-    amountNaira: total,
-    reference,
-    metadata: {
-      orderId: String(order._id),
-      orderNumber,
-      custom_fields: [
-        { display_name: 'Order Number', variable_name: 'order_number', value: orderNumber },
-      ],
-    },
-  });
+	const init = await initializePayment({
+		email: userEmail,
+		amountNaira: total,
+		reference,
+		metadata: {
+			orderId: String(order._id),
+			orderNumber,
+			custom_fields: [
+				{
+					display_name: "Order Number",
+					variable_name: "order_number",
+					value: orderNumber,
+				},
+			],
+		},
+	});
 
-  order.payment.raw = { authorization_url: init.link };
-  await order.save();
+	order.payment.raw = { authorization_url: init.link };
+	await order.save();
 
-  await recordAudit({
-    actorId: userId,
-    action: 'order.init',
-    entity: 'Order',
-    entityId: String(order._id),
-    after: { orderNumber, total },
-  });
+	await recordAudit({
+		actorId: userId,
+		action: "order.init",
+		entity: "Order",
+		entityId: String(order._id),
+		after: { orderNumber, total },
+	});
 
-  return { order, paymentLink: init.link };
+	return { order, paymentLink: init.link };
 }
 
 export async function markOrderPaid(
@@ -450,6 +463,13 @@ export async function updateOrderStatus(
 	const order = await Order.findById(id);
 	if (!order) throw AppError.notFound("Order not found");
 
+	const previousStatus = order.status;
+
+	// No-op if status is unchanged
+	if (previousStatus === status) {
+		return order;
+	}
+
 	const allowed: Record<OrderStatus, OrderStatus[]> = {
 		pending: ["paid", "cancelled"],
 		paid: ["processing", "cancelled", "refunded"],
@@ -480,6 +500,79 @@ export async function updateOrderStatus(
 		entityId: String(order._id),
 		after: { status, note },
 	});
+
+	// ── Send the appropriate email ────────────────────────
+	// Note: markOrderPaid already sends a confirmation email on `pending → paid`,
+	// so we skip sending again here. All other transitions notify the customer.
+	// Fire-and-forget — never block the operation on email delivery.
+	const recipient = await getOrderRecipientEmail(order);
+	if (recipient) {
+		const customerName = order.shippingAddress?.fullName || "there";
+		const orderNumber = order.orderNumber;
+
+		void (async () => {
+			try {
+				switch (status) {
+					case "processing":
+						await emailService.sendOrderProcessingEmail({
+							to: recipient,
+							orderNumber,
+							customerName,
+						});
+						break;
+
+					case "shipped":
+						await emailService.sendOrderShippedEmail({
+							to: recipient,
+							orderNumber,
+							customerName,
+							courier: order.fulfilment?.courier,
+							trackingNo: order.fulfilment?.trackingNo,
+						});
+						break;
+
+					case "delivered":
+						await emailService.sendOrderDeliveredEmail({
+							to: recipient,
+							orderNumber,
+							customerName,
+						});
+						break;
+
+					case "cancelled":
+						await emailService.sendOrderCancelledEmail({
+							to: recipient,
+							orderNumber,
+							customerName,
+							reason: note ? `Reason: ${note}` : undefined,
+						});
+						break;
+
+					case "refunded":
+						await emailService.sendOrderRefundedEmail({
+							to: recipient,
+							orderNumber,
+							customerName,
+							amount: order.total,
+						});
+						break;
+
+					case "paid":
+						// markOrderPaid already sends OrderConfirmationEmail.
+						// If you ever move that responsibility here, uncomment:
+						// await emailService.sendOrderConfirmationEmail({ ... });
+						break;
+
+					case "pending":
+						// No email for pending.
+						break;
+				}
+			} catch (err) {
+				// Never let an email failure roll back the status change.
+				// sendSafe already logs; this is defence-in-depth.
+			}
+		})();
+	}
 
 	return order;
 }
