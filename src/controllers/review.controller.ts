@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
-import { asyncHandler } from "../utils/asyncHandler";
-import { ok, created, paginated } from "../utils/apiResponse";
 import * as reviewService from "../services/review.service";
+import { created, ok, paginated } from "../utils/apiResponse";
+import { asyncHandler } from "../utils/asyncHandler";
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
 	const review = await reviewService.createReview(
@@ -9,6 +9,15 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 		req.body,
 	);
 	return created(res, review, "Review submitted for moderation");
+});
+
+export const canReview = asyncHandler(async (req: Request, res: Response) => {
+	const { productId } = req.params;
+	const result = await reviewService.canReviewProduct(
+		String(req.user!._id),
+		productId,
+	);
+	return ok(res, result);
 });
 
 export const list = asyncHandler(async (req: Request, res: Response) => {

@@ -1,27 +1,33 @@
 import { Router } from "express";
+import { z } from "zod";
 import * as ctrl from "../controllers/review.controller";
 import { requireAuth } from "../middleware/auth";
 import { requireAdmin } from "../middleware/rbac";
 import { validate } from "../middleware/validate";
 import {
 	createReviewSchema,
-	moderateReviewSchema,
 	listReviewsQuerySchema,
+	moderateReviewSchema,
 } from "../validators/review.validator";
-import { z } from "zod";
 
 const router = Router();
 const objectId = z.string().regex(/^[a-fA-F0-9]{24}$/);
 
-// Customer
+// ── Customer ───────────────────────────────────────────
 router.post(
 	"/",
 	requireAuth,
 	validate({ body: createReviewSchema }),
 	ctrl.create,
 );
+router.get(
+	"/can-review/:productId",
+	requireAuth,
+	validate({ params: z.object({ productId: objectId }) }),
+	ctrl.canReview,
+);
 
-// Admin
+// ── Admin ──────────────────────────────────────────────
 router.get(
 	"/admin",
 	requireAuth,

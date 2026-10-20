@@ -1,35 +1,75 @@
 import { Types } from "mongoose";
-import { Review, IReview } from "../models/Review";
 import { Order } from "../models/Order";
+import { IReview, Review } from "../models/Review";
 import { AppError } from "../utils/AppError";
 import { CreateReviewInput } from "../validators/review.validator";
-import { recalcProductRating } from "./product.service";
 import { recordAudit } from "./audit.service";
+import { recalcProductRating } from "./product.service";
+
+/**
+ * Determine whether a user is eligible to review a given product.
+ *
+ * A user is eligible if:
+ *  1. They have at least one PAID order (paid / processing / shipped / delivered)
+ *     containing that product line, AND
+ *  2. They have not already submitted a review for it.
+ */
+export async function canReviewProduct(
+	userId: string,
+	productId: string,
+): Promise<{ eligible: boolean; reason?: string }> {
+	const already = await Review.findOne({ userId, productId });
+	if (already) {
+		return {
+			eligible: false,
+			reason: "You have already reviewed this product.",
+		};
+	}
+
+	const purchased = await Order.findOne({
+		userId: new Types.ObjectId(userId),
+		status: { $in: ["paid", "processing", "shipped", "delivered"] },
+		"items.refId": new Types.ObjectId(productId),
+	}).lean();
+
+	if (!purchased) {
+		return {
+			eligible: false,
+			reason: "Only customers who have purchased this product can review it.",
+		};
+	}
+
+	return { eligible: true };
+}
 
 export async function createReview(
 	userId: string,
 	input: CreateReviewInput,
 ): Promise<IReview> {
-	const already = await Review.findOne({ userId, productId: input.productId });
-	if (already)
-		throw AppError.conflict("You have already reviewed this product");
+	// Check eligibility (purchase + not already reviewed)
+	const check = await canReviewProduct(userId, input.productId);
+	if (!check.eligible) {
+		throw AppError.forbidden(check.reason ?? "You cannot review this product.");
+	}
 
-	// Determine verified purchase
-	const purchased = await Order.findOne({
-		userId,
+	// Fetch the matching paid order to link the review and mark it verified
+	const purchasedOrder = await Order.findOne({
+		userId: new Types.ObjectId(userId),
 		status: { $in: ["paid", "processing", "shipped", "delivered"] },
 		"items.refId": new Types.ObjectId(input.productId),
-	}).lean();
+	})
+		.sort({ createdAt: -1 })
+		.lean();
 
 	const review = await Review.create({
 		userId,
 		productId: input.productId,
-		orderId: input.orderId ?? purchased?._id,
+		orderId: input.orderId ?? purchasedOrder?._id,
 		rating: input.rating,
 		title: input.title,
 		body: input.body,
 		photos: input.photos ?? [],
-		verifiedPurchase: Boolean(purchased),
+		verifiedPurchase: true, // guaranteed by the check above
 		status: "pending",
 	});
 
