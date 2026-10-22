@@ -6,34 +6,13 @@ import { Product } from "../models/Product";
 import { ok } from "../utils/apiResponse";
 import { asyncHandler } from "../utils/asyncHandler";
 
-interface ShopItem {
-	type: "product" | "collection";
-	data: any;
-}
-
-/**
- * GET /shop/all
- *
- * Returns a unified list of products and/or collections.
- *
- * Sorting is applied per-type:
- *   - Products: featured / price-asc / price-desc / newest
- *   - Collections: featured / newest (price sorts ignored since collections
- *     have a computed price but the client already handles this well enough)
- *
- * Category filtering:
- *   - 'all' or missing: return both
- *   - 'collections': return only collections
- *   - 'gift-boxes': return collections with occasion = 'Gift'
- *   - anything else: treat as a product category, return only that category's products
- */
 export const listAll = asyncHandler(async (req: Request, res: Response) => {
 	const q = (req.query.q as string)?.trim() || undefined;
 	const categorySlug = (req.query.categorySlug as string) || undefined;
 	const sort = (req.query.sort as string) || "featured";
 	const limit = Math.min(Number(req.query.limit ?? 60), 200);
 
-	// ── Determine what to query ──────────────────────────
+	// ── Decide what to query ──────────────────────────────
 	let includeProducts = true;
 	let includeCollections = true;
 	let productCategoryId: Types.ObjectId | undefined;
@@ -42,24 +21,20 @@ export const listAll = asyncHandler(async (req: Request, res: Response) => {
 	if (categorySlug && categorySlug !== "all") {
 		if (categorySlug === "collections") {
 			includeProducts = false;
-			includeCollections = true;
 		} else if (categorySlug === "gift-boxes") {
 			includeProducts = false;
-			includeCollections = true;
 			collectionOccasion = "Gift";
 		} else {
-			// Any other slug is a product category — filter products only.
 			const category = await Category.findOne({ slug: categorySlug }).lean();
 			if (!category) {
 				return ok(res, { products: [], collections: [], total: 0 });
 			}
 			productCategoryId = category._id as Types.ObjectId;
-			includeProducts = true;
 			includeCollections = false;
 		}
 	}
 
-	// ── Products query ────────────────────────────────────
+	// ── Products ──────────────────────────────────────────
 	let productsPromise: Promise<any[]> = Promise.resolve([]);
 
 	if (includeProducts) {
@@ -76,14 +51,10 @@ export const listAll = asyncHandler(async (req: Request, res: Response) => {
 		if (sort === "price-asc" || sort === "price-desc") {
 			const direction = sort === "price-asc" ? 1 : -1;
 			productsPromise = Product.aggregate([
-				// Only products that actually have at least one pack size
 				{ $match: { ...productFilter, "packSizes.0": { $exists: true } } },
-				// Sort by cheapest variant
 				{ $addFields: { _minPrice: { $min: "$packSizes.price" } } },
-				// Tie-break with featured then newest
 				{ $sort: { _minPrice: direction, isFeatured: -1, createdAt: -1 } },
 				{ $limit: limit },
-				// Populate category (same shape as .populate('categoryId', ...))
 				{
 					$lookup: {
 						from: "categories",
@@ -106,7 +77,6 @@ export const listAll = asyncHandler(async (req: Request, res: Response) => {
 				.populate("categoryId", "name slug")
 				.lean();
 		} else {
-			// 'featured' or default
 			productsPromise = Product.find(productFilter)
 				.sort({ isFeatured: -1, createdAt: -1 })
 				.limit(limit)
@@ -115,7 +85,7 @@ export const listAll = asyncHandler(async (req: Request, res: Response) => {
 		}
 	}
 
-	// ── Collections query ─────────────────────────────────
+	// ── Collections — fetch WITHOUT sorting so we can sort by price later ──
 	let collectionsPromise: Promise<any[]> = Promise.resolve([]);
 
 	if (includeCollections) {
@@ -123,25 +93,19 @@ export const listAll = asyncHandler(async (req: Request, res: Response) => {
 		if (collectionOccasion) collectionFilter.occasion = collectionOccasion;
 		if (q) collectionFilter.name = new RegExp(q, "i");
 
-		// Collections support featured + newest. Price sorts fall back to featured
-		// order — the frontend hides the sort control for collection-only views.
-		const collectionSort: Record<string, 1 | -1> =
-			sort === "newest" ? { createdAt: -1 } : { isFeatured: -1, createdAt: -1 };
-
 		collectionsPromise = Collection.find(collectionFilter)
-			.sort(collectionSort)
-			.limit(limit)
+			.limit(limit * 5) // fetch enough to sort accurately
 			.populate("items.productId", "name slug images packSizes")
 			.lean();
 	}
 
-	const [products, collections] = await Promise.all([
+	const [products, collectionsRaw] = await Promise.all([
 		productsPromise,
 		collectionsPromise,
 	]);
 
-	// ── Compute collection prices so the storefront doesn't need to ──
-	const collectionsWithPrice = (collections as any[]).map((c) => {
+	// ── Compute price for every collection ────────────────
+	const collectionsWithPrice = (collectionsRaw as any[]).map((c) => {
 		const subtotal = (c.items ?? []).reduce((sum: number, item: any) => {
 			const product =
 				typeof item.productId === "object" ? item.productId : null;
@@ -159,27 +123,51 @@ export const listAll = asyncHandler(async (req: Request, res: Response) => {
 		return { ...c, computedPrice };
 	});
 
+	// ── Sort collections by computedPrice (in memory) ─────
+	const collections = (() => {
+		if (sort === "price-asc") {
+			return [...collectionsWithPrice]
+				.sort((a, b) => a.computedPrice - b.computedPrice)
+				.slice(0, limit);
+		}
+		if (sort === "price-desc") {
+			return [...collectionsWithPrice]
+				.sort((a, b) => b.computedPrice - a.computedPrice)
+				.slice(0, limit);
+		}
+		if (sort === "newest") {
+			return [...collectionsWithPrice]
+				.sort(
+					(a, b) =>
+						new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+				)
+				.slice(0, limit);
+		}
+		// featured
+		return [...collectionsWithPrice]
+			.sort((a, b) => {
+				if (a.isFeatured && !b.isFeatured) return -1;
+				if (!a.isFeatured && b.isFeatured) return 1;
+				return (
+					new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+				);
+			})
+			.slice(0, limit);
+	})();
+
 	return ok(res, {
 		products,
-		collections: collectionsWithPrice,
-		total: products.length + collectionsWithPrice.length,
+		collections,
+		total: products.length + collections.length,
 	});
 });
 
-/**
- * GET /shop/categories
- *
- * Returns the active admin categories PLUS two synthetic utility categories
- * ('collections', 'gift-boxes') so the sidebar always has an entry for each
- * content type even if the admin hasn't created one.
- */
 export const listShopCategories = asyncHandler(
 	async (_req: Request, res: Response) => {
 		const categories = await Category.find({ isActive: true })
 			.sort({ order: 1, name: 1 })
 			.select("_id name slug description")
 			.lean();
-
 		return ok(res, categories);
 	},
 );
