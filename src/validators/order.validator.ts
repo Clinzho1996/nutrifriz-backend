@@ -37,6 +37,7 @@ export const checkoutInitSchema = z.object({
 	shippingAddress: addressSchema,
 	shippingFee: z.number().nonnegative().default(0),
 	note: z.string().max(500).optional(),
+	paymentMethod: z.enum(["paystack", "bank_transfer"]), // NEW
 });
 
 export const listOrdersQuerySchema = z.object({

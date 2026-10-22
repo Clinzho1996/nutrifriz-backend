@@ -99,7 +99,6 @@ const PaymentSchema = new Schema<IOrderPayment>(
 			type: String,
 			enum: ["paystack", "flutterwave", "manual", "transfer_manual"],
 			required: true,
-			default: "transfer_manual",
 		},
 		method: {
 			type: String,

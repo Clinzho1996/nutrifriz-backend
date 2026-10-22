@@ -126,22 +126,23 @@ async function computeCollectionPriceFor(
 	return Math.round(total * (1 - discount / 100));
 }
 
-/**
- * Create a pending order awaiting a manual bank transfer.
- * No payment gateway is contacted. The order is created with
- * payment.status = 'init' and stays pending until an admin marks it paid.
- */
+import { initializeTransaction } from "./paystack.service";
+
 export async function createPendingOrder(
 	userId: string,
 	userEmail: string,
 	input: CheckoutInitInput,
-): Promise<{ order: IOrder }> {
+): Promise<{ order: IOrder; paymentLink?: string }> {
 	const { items, subtotal } = await buildCartItems(input.items);
 	const shippingFee = input.shippingFee ?? 0;
 	const total = subtotal + shippingFee;
 
 	const orderNumber = await nextOrderNumber(Order);
-	const reference = `BANK_${orderNumber}_${Date.now()}`;
+
+	const isPaystack = input.paymentMethod === "paystack";
+	const reference = isPaystack
+		? `NFR_PS_${orderNumber}_${Date.now()}`
+		: `BANK_${orderNumber}_${Date.now()}`;
 
 	const order = await Order.create({
 		orderNumber,
@@ -154,8 +155,8 @@ export async function createPendingOrder(
 		shippingAddress: input.shippingAddress,
 		status: "pending",
 		payment: {
-			provider: "transfer_manual",
-			method: "bank_transfer",
+			provider: isPaystack ? "paystack" : "transfer_manual",
+			method: isPaystack ? "paystack" : "bank_transfer",
 			reference,
 			status: "init",
 		},
@@ -163,20 +164,50 @@ export async function createPendingOrder(
 			{
 				status: "pending",
 				at: new Date(),
-				note: "Order created — awaiting bank transfer",
+				note: isPaystack
+					? "Order created — awaiting Paystack payment"
+					: "Order created — awaiting bank transfer",
 			},
 		],
 	});
+
+	let paymentLink: string | undefined;
+
+	if (isPaystack) {
+		const init = await initializeTransaction({
+			email: userEmail,
+			amountNaira: total,
+			reference,
+			metadata: {
+				orderId: String(order._id),
+				orderNumber,
+				custom_fields: [
+					{
+						display_name: "Order Number",
+						variable_name: "order_number",
+						value: orderNumber,
+					},
+				],
+			},
+			callbackUrl: `${process.env.STOREFRONT_URL}/checkout/verify`,
+		});
+
+		// Store the authorization URL for reference
+		order.payment.raw = { authorization_url: init.authorization_url };
+		await order.save();
+
+		paymentLink = init.authorization_url;
+	}
 
 	await recordAudit({
 		actorId: userId,
 		action: "order.init",
 		entity: "Order",
 		entityId: String(order._id),
-		after: { orderNumber, total, method: "bank_transfer" },
+		after: { orderNumber, total, paymentMethod: input.paymentMethod },
 	});
 
-	return { order };
+	return { order, paymentLink };
 }
 
 export async function markOrderPaid(
@@ -185,41 +216,22 @@ export async function markOrderPaid(
 ): Promise<IOrder | null> {
 	const order = await Order.findOne({ "payment.reference": reference });
 	if (!order) return null;
+
+	// Idempotent — already paid, do nothing
 	if (order.payment.status === "success") return order;
 
 	order.payment.status = "success";
 	order.payment.paidAt = new Date();
 	order.payment.raw = { ...(order.payment.raw ?? {}), ...(payload ?? {}) };
 	order.status = "paid";
-	order.history.push({ status: "paid", at: new Date() });
-
+	order.history.push({
+		status: "paid",
+		at: new Date(),
+		note: "Payment confirmed",
+	});
 	await order.save();
 
-	const recipientEmail =
-		order.guestEmail ??
-		(order.userId ? (await User.findById(order.userId).lean())?.email : null);
-	if (recipientEmail) {
-		await emailService.sendOrderConfirmationEmail({
-			to: recipientEmail,
-			orderNumber: order.orderNumber,
-			customerName: order.shippingAddress.fullName,
-			items: order.items.map((i) => ({
-				name: i.name,
-				qty: i.qty,
-				unitPrice: i.unitPrice,
-			})),
-			subtotal: order.subtotal,
-			shippingFee: order.shippingFee,
-			total: order.total,
-			shippingAddress: {
-				street: order.shippingAddress.street,
-				city: order.shippingAddress.city,
-				state: order.shippingAddress.state,
-			},
-		});
-	}
-
-	// Deduct stock for product lines
+	// Deduct stock
 	for (const item of order.items) {
 		if (item.kind === "product") {
 			const packSize = (item.meta as any)?.packSize;
@@ -234,7 +246,7 @@ export async function markOrderPaid(
 		}
 	}
 
-	// Award crunch points (1 per ₦1000 spent) — simple rule
+	// Award crunch points
 	if (order.userId) {
 		const points = Math.floor(order.total / 1000);
 		if (points > 0) {
@@ -242,6 +254,37 @@ export async function markOrderPaid(
 				$inc: { crunchPoints: points },
 			});
 		}
+	}
+
+	// Send confirmation email (fire-and-forget)
+	const recipient = await getOrderRecipientEmail(order);
+	if (recipient) {
+		const customerName = order.shippingAddress?.fullName || "there";
+		void (async () => {
+			try {
+				const emailService = await import("./email.service");
+				await emailService.sendOrderConfirmationEmail({
+					to: recipient,
+					orderNumber: order.orderNumber,
+					customerName,
+					items: order.items.map((i: any) => ({
+						name: i.name,
+						qty: i.qty,
+						unitPrice: i.unitPrice,
+					})),
+					subtotal: order.subtotal,
+					shippingFee: order.shippingFee,
+					total: order.total,
+					shippingAddress: {
+						street: order.shippingAddress.street,
+						city: order.shippingAddress.city,
+						state: order.shippingAddress.state,
+					},
+				});
+			} catch (err) {
+				console.error("[markOrderPaid] email failed", err);
+			}
+		})();
 	}
 
 	await recordAudit({
@@ -594,96 +637,27 @@ export async function confirmBankTransfer(
 	const order = await Order.findById(orderId);
 	if (!order) throw AppError.notFound("Order not found");
 
-	if (order.payment.status === "success") {
-		throw AppError.badRequest("Payment is already confirmed");
-	}
-	if (order.status !== "pending") {
+	if (order.payment.provider !== "transfer_manual") {
 		throw AppError.badRequest(
-			`Cannot confirm payment on a ${order.status} order`,
+			"This endpoint is for bank-transfer orders only. Use the payment verify endpoint for online payments.",
 		);
 	}
 
-	order.payment.status = "success";
-	order.payment.paidAt = new Date();
+	if (order.payment.status === "success") {
+		throw AppError.badRequest("Payment is already confirmed");
+	}
+
+	// Capture receipt info first so markOrderPaid preserves it
 	order.payment.receiptNote = input.receiptNote;
 	order.payment.receiptProofUrl = input.receiptProofUrl;
-	order.status = "paid";
-	order.history.push({
-		status: "paid",
-		at: new Date(),
-		by: new Types.ObjectId(actorId),
-		note: input.receiptNote
-			? `Bank transfer confirmed — ${input.receiptNote}`
-			: "Bank transfer confirmed",
-	});
 	await order.save();
 
-	// Deduct stock now that payment is confirmed
-	for (const item of order.items) {
-		if (item.kind === "product") {
-			const packSize = (item.meta as any)?.packSize;
-			if (!packSize) continue;
-			await Product.updateOne(
-				{ _id: item.refId, "packSizes.size": packSize },
-				{ $inc: { "packSizes.$.stock": -item.qty } },
-			);
-		}
-		if (item.kind === "mix") {
-			await MixConfig.findByIdAndUpdate(item.refId, { status: "ordered" });
-		}
-	}
-
-	// Award crunch points
-	if (order.userId) {
-		const points = Math.floor(order.total / 1000);
-		if (points > 0) {
-			await User.findByIdAndUpdate(order.userId, {
-				$inc: { crunchPoints: points },
-			});
-		}
-	}
-
-	// Send the order confirmation email (same as markOrderPaid did)
-	const recipient = await getOrderRecipientEmail(order);
-	if (recipient) {
-		const customerName = order.shippingAddress?.fullName || "there";
-		void (async () => {
-			try {
-				const emailService = await import("./email.service");
-				await emailService.sendOrderConfirmationEmail({
-					to: recipient,
-					orderNumber: order.orderNumber,
-					customerName,
-					items: order.items.map((i: any) => ({
-						name: i.name,
-						qty: i.qty,
-						unitPrice: i.unitPrice,
-					})),
-					subtotal: order.subtotal,
-					shippingFee: order.shippingFee,
-					total: order.total,
-					shippingAddress: {
-						street: order.shippingAddress.street,
-						city: order.shippingAddress.city,
-						state: order.shippingAddress.state,
-					},
-				});
-			} catch {
-				// swallowed — email never blocks the business operation
-			}
-		})();
-	}
-
-	await recordAudit({
+	const updated = await markOrderPaid(order.payment.reference, {
+		source: "admin_confirmed",
+		receiptNote: input.receiptNote,
 		actorId,
-		action: "order.payment.confirm",
-		entity: "Order",
-		entityId: String(order._id),
-		after: {
-			reference: order.payment.reference,
-			receiptNote: input.receiptNote,
-		},
 	});
 
-	return order;
+	if (!updated) throw AppError.internal("Failed to mark order paid");
+	return updated;
 }
