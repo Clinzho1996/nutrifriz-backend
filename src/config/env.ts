@@ -54,7 +54,12 @@ export const env = {
 	},
 
 	// Remove paystack block, add:
-
+	paystack: {
+		publicKey: optional("PAYSTACK_PUBLIC_KEY"),
+		secretKey: optional("PAYSTACK_SECRET_KEY"),
+		baseUrl: optional("PAYSTACK_BASE_URL", "https://api.paystack.co"),
+	},
+	
 	flutterwave: {
 		publicKey: optional("FLUTTERWAVE_PUBLIC_KEY"),
 		secretKey: optional("FLUTTERWAVE_SECRET_KEY"),

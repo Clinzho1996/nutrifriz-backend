@@ -17,9 +17,9 @@ const paystackConfig = (
 ).paystack;
 
 const client: AxiosInstance = axios.create({
-	baseURL: paystackConfig.baseUrl,
+	baseURL: env.paystack.baseUrl,
 	headers: {
-		Authorization: `Bearer ${paystackConfig.secretKey}`,
+		Authorization: `Bearer ${env.paystack.secretKey}`,
 		"Content-Type": "application/json",
 	},
 	timeout: 15_000,
@@ -76,7 +76,7 @@ export function verifyWebhookSignature(
 	signature: string,
 ): boolean {
 	const hash = crypto
-		.createHmac("sha512", paystackConfig.secretKey)
+		.createHmac("sha512", env.paystack.secretKey)
 		.update(rawBody)
 		.digest("hex");
 	return hash === signature;
