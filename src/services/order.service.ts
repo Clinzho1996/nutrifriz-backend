@@ -7,6 +7,7 @@ import { User } from "../models/User";
 import { OrderStatus } from "../types";
 import { AppError } from "../utils/AppError";
 import { nextOrderNumber } from "../utils/orderNumber";
+import { computeShippingFee, PICKUP_LOCATION } from "../utils/shipping";
 import {
 	CheckoutInitInput,
 	CreateManualOrderInput,
@@ -134,8 +135,25 @@ export async function createPendingOrder(
 	input: CheckoutInitInput,
 ): Promise<{ order: IOrder; paymentLink?: string }> {
 	const { items, subtotal } = await buildCartItems(input.items);
-	const shippingFee = input.shippingFee ?? 0;
+	// Server-side fee computation
+	const shippingFee = computeShippingFee({
+		method: input.fulfilmentMethod,
+		state: input.shippingAddress?.state,
+	});
+
 	const total = subtotal + shippingFee;
+
+	const shippingAddress =
+		input.fulfilmentMethod === "pickup"
+			? {
+					fullName: input.shippingAddress?.fullName ?? "Pickup Customer",
+					phone: input.shippingAddress?.phone ?? "",
+					street: `Pickup at ${PICKUP_LOCATION.address}`,
+					city: "Lagos",
+					state: "Lagos",
+					country: "Nigeria",
+				}
+			: input.shippingAddress!;
 
 	const orderNumber = await nextOrderNumber(Order);
 
@@ -160,6 +178,11 @@ export async function createPendingOrder(
 			reference,
 			status: "init",
 		},
+		fulfilment: {
+			method: input.fulfilmentMethod,
+			pickupNote: input.pickupNote,
+		},
+
 		history: [
 			{
 				status: "pending",

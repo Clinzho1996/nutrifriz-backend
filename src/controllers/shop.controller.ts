@@ -5,6 +5,7 @@ import { Collection } from "../models/Collection";
 import { Product } from "../models/Product";
 import { ok } from "../utils/apiResponse";
 import { asyncHandler } from "../utils/asyncHandler";
+import { PICKUP_LOCATION, SHIPPING_RATES } from "../utils/shipping";
 
 export const listAll = asyncHandler(async (req: Request, res: Response) => {
 	const q = (req.query.q as string)?.trim() || undefined;
@@ -169,5 +170,20 @@ export const listShopCategories = asyncHandler(
 			.select("_id name slug description")
 			.lean();
 		return ok(res, categories);
+	},
+);
+
+export const getShippingOptions = asyncHandler(
+	async (_req: Request, res: Response) => {
+		return ok(res, {
+			delivery: {
+				lagos: SHIPPING_RATES.LAGOS,
+				outsideLagos: SHIPPING_RATES.OUTSIDE_LAGOS,
+			},
+			pickup: {
+				fee: SHIPPING_RATES.PICKUP,
+				location: PICKUP_LOCATION,
+			},
+		});
 	},
 );

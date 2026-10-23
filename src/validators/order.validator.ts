@@ -32,13 +32,27 @@ const cartItemSchema = z.discriminatedUnion("kind", [
 	}),
 ]);
 
-export const checkoutInitSchema = z.object({
-	items: z.array(cartItemSchema).min(1),
-	shippingAddress: addressSchema,
-	shippingFee: z.number().nonnegative().default(0),
-	note: z.string().max(500).optional(),
-	paymentMethod: z.enum(["paystack", "bank_transfer"]), // NEW
-});
+export const checkoutInitSchema = z
+	.object({
+		items: z.array(cartItemSchema).min(1),
+		fulfilmentMethod: z.enum(["delivery", "pickup"]),
+		// Required when fulfilmentMethod === 'delivery'; optional for pickup
+		shippingAddress: addressSchema.optional(),
+		pickupNote: z.string().max(300).optional(),
+		// Optional — accepted but ignored for pickup. Server recomputes.
+		shippingFee: z.number().nonnegative().optional(),
+		note: z.string().max(500).optional(),
+		paymentMethod: z.enum(["paystack", "bank_transfer"]).default("paystack"),
+	})
+	.refine(
+		(v) =>
+			v.fulfilmentMethod === "pickup" ||
+			(v.fulfilmentMethod === "delivery" && Boolean(v.shippingAddress)),
+		{
+			message: "Shipping address is required for delivery orders",
+			path: ["shippingAddress"],
+		},
+	);
 
 export const listOrdersQuerySchema = z.object({
 	page: z.coerce.number().int().positive().default(1),

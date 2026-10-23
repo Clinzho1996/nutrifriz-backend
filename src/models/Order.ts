@@ -36,6 +36,8 @@ export interface IOrderHistory {
 }
 
 export interface IOrderFulfilment {
+	method?: "delivery" | "pickup";
+	pickupNote?: string;
 	courier?: string;
 	trackingNo?: string;
 	notes?: string;
@@ -138,6 +140,12 @@ const HistorySchema = new Schema<IOrderHistory>(
 
 const FulfilmentSchema = new Schema<IOrderFulfilment>(
 	{
+		method: {
+			type: String,
+			enum: ["delivery", "pickup"],
+			default: "delivery",
+		},
+		pickupNote: { type: String, maxlength: 300 },
 		courier: String,
 		trackingNo: String,
 		notes: String,
