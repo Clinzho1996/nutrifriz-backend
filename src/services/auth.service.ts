@@ -223,11 +223,15 @@ export async function listUsers(query: {
 export async function requestPasswordReset(email: string) {
 	const user = await User.findOne({ email });
 	if (!user) {
-		// Don't leak that the email doesn't exist
 		return { success: true };
 	}
 
-	// Generate a JWT that expires in 30 minutes
+	// Admin and staff can only change password after logging in.
+	// Do not send a reset link, and do not reveal that they are admin.
+	if (user.role === "admin" || user.role === "staff") {
+		return { success: true };
+	}
+
 	const resetToken = jwt.sign(
 		{ sub: String(user._id), purpose: "password_reset" },
 		env.jwt.secret,

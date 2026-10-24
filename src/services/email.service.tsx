@@ -13,12 +13,13 @@ import { WelcomeEmail } from "../emails/templates/welcome";
 
 const resend = new Resend(env.resend.apiKey);
 
-const FROM = `${env.resend.fromName} <${env.resend.fromEmail}>`;
-
 /**
  * Send an email. Never throws — logs the error and returns null so callers
  * don't fail their primary operation (e.g. order creation) because email failed.
  */
+const FROM = `${env.resend.fromName} <${env.resend.fromEmail}>`;
+const REPLY_TO = env.email.replyTo;
+
 async function sendSafe(params: {
 	to: string;
 	subject: string;
@@ -34,6 +35,7 @@ async function sendSafe(params: {
 		const { data, error } = await resend.emails.send({
 			from: FROM,
 			to: params.to,
+			replyTo: REPLY_TO,
 			subject: params.subject,
 			html: params.html,
 			text: params.text,

@@ -59,7 +59,7 @@ export const env = {
 		secretKey: optional("PAYSTACK_SECRET_KEY"),
 		baseUrl: optional("PAYSTACK_BASE_URL", "https://api.paystack.co"),
 	},
-	
+
 	flutterwave: {
 		publicKey: optional("FLUTTERWAVE_PUBLIC_KEY"),
 		secretKey: optional("FLUTTERWAVE_SECRET_KEY"),
@@ -74,15 +74,20 @@ export const env = {
 
 	storefrontUrl,
 
+	email: {
+		from: optional("EMAIL_FROM", "hello@nutrifriz.com"),
+		replyTo: optional("EMAIL_REPLY_TO", "nutrifriz@gmail.com"),
+		adminNotification: optional(
+			"ADMIN_NOTIFICATION_EMAIL",
+			"nutrifriz@gmail.com",
+		),
+		apiKey: optional("EMAIL_API_KEY"),
+	},
+
 	cloudinary: {
 		cloudName: optional("CLOUDINARY_CLOUD_NAME"),
 		apiKey: optional("CLOUDINARY_API_KEY"),
 		apiSecret: optional("CLOUDINARY_API_SECRET"),
-	},
-
-	email: {
-		from: optional("EMAIL_FROM", "hello@nutrifriz.com"),
-		apiKey: optional("EMAIL_API_KEY"),
 	},
 
 	rateLimit: {
