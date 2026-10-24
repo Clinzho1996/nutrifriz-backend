@@ -2,6 +2,7 @@ import { render } from "react-email";
 import { Resend } from "resend";
 import { env } from "../config/env";
 import { logger } from "../config/logger";
+import { AdminNewOrderEmail } from "../emails/templates/admin-new-order";
 import { OrderCancelledEmail } from "../emails/templates/order-cancelled";
 import { OrderConfirmationEmail } from "../emails/templates/order-confirmation";
 import { OrderDeliveredEmail } from "../emails/templates/order-delivered";
@@ -10,6 +11,7 @@ import { OrderRefundedEmail } from "../emails/templates/order-refunded";
 import { OrderShippedEmail } from "../emails/templates/order-shipped";
 import { PasswordResetEmail } from "../emails/templates/password-reset";
 import { WelcomeEmail } from "../emails/templates/welcome";
+import { formatNaira } from "../utils/format";
 
 const resend = new Resend(env.resend.apiKey);
 
@@ -54,6 +56,52 @@ async function sendSafe(params: {
 	}
 }
 
+export async function sendAdminNewOrderEmail(params: {
+	orderNumber: string;
+	customerName: string;
+	customerEmail: string;
+	customerPhone: string;
+	items: { name: string; qty: number; unitPrice: number }[];
+	subtotal: number;
+	shippingFee: number;
+	total: number;
+	paymentMethod: "paystack" | "bank_transfer" | "manual";
+	paymentStatus: "paid" | "pending";
+	fulfilmentMethod: "delivery" | "pickup";
+	shippingAddress?: string;
+	pickupNote?: string;
+}) {
+	const adminEmail = env.email.adminNotification;
+	if (!adminEmail) return null;
+
+	const html = await render(
+		<AdminNewOrderEmail
+			orderNumber={params.orderNumber}
+			customerName={params.customerName}
+			customerEmail={params.customerEmail}
+			customerPhone={params.customerPhone}
+			items={params.items}
+			subtotal={params.subtotal}
+			shippingFee={params.shippingFee}
+			total={params.total}
+			paymentMethod={params.paymentMethod}
+			paymentStatus={params.paymentStatus}
+			fulfilmentMethod={params.fulfilmentMethod}
+			shippingAddress={params.shippingAddress}
+			pickupNote={params.pickupNote}
+			orderAdminUrl={`${process.env.ADMIN_URL ?? "https://nutrifriz-admin-portal.vercel.app"}/orders/${params.orderNumber}`}
+		/>,
+	);
+
+	return sendSafe({
+		to: adminEmail,
+		subject:
+			params.paymentStatus === "paid"
+				? `Paid order ${params.orderNumber} — ${formatNaira(params.total)}`
+				: `New order ${params.orderNumber} — ${formatNaira(params.total)}`,
+		html,
+	});
+}
 export async function sendOrderProcessingEmail(params: {
 	to: string;
 	orderNumber: string;

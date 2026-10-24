@@ -230,6 +230,39 @@ export async function createPendingOrder(
 		after: { orderNumber, total, paymentMethod: input.paymentMethod },
 	});
 
+	// Notify admin immediately — even before payment
+	const recipient = userEmail;
+	const adminUser = await User.findById(userId).lean();
+
+	void (async () => {
+		try {
+			const emailService = await import("./email.service");
+			await emailService.sendAdminNewOrderEmail({
+				orderNumber: order.orderNumber,
+				customerName: shippingAddress.fullName,
+				customerEmail: adminUser?.email ?? userEmail,
+				customerPhone: shippingAddress.phone,
+				items: order.items.map((i: any) => ({
+					name: i.name,
+					qty: i.qty,
+					unitPrice: i.unitPrice,
+				})),
+				subtotal: order.subtotal,
+				shippingFee: order.shippingFee,
+				total: order.total,
+				paymentMethod: input.paymentMethod,
+				paymentStatus: "pending",
+				fulfilmentMethod: input.fulfilmentMethod,
+				shippingAddress:
+					input.fulfilmentMethod === "delivery"
+						? `${shippingAddress.street}, ${shippingAddress.city}, ${shippingAddress.state}`
+						: undefined,
+				pickupNote: input.pickupNote,
+			});
+		} catch (err) {
+			console.error("[createPendingOrder] admin email failed", err);
+		}
+	})();
 	return { order, paymentLink };
 }
 
@@ -310,6 +343,36 @@ export async function markOrderPaid(
 		})();
 	}
 
+	void (async () => {
+		try {
+			const emailService = await import("./email.service");
+			await emailService.sendAdminNewOrderEmail({
+				orderNumber: order.orderNumber,
+				customerName: order.shippingAddress?.fullName ?? "Customer",
+				customerEmail: recipient ?? "",
+				customerPhone: order.shippingAddress?.phone ?? "",
+				items: order.items.map((i: any) => ({
+					name: i.name,
+					qty: i.qty,
+					unitPrice: i.unitPrice,
+				})),
+				subtotal: order.subtotal,
+				shippingFee: order.shippingFee,
+				total: order.total,
+				paymentMethod:
+					order.payment.provider === "paystack" ? "paystack" : "bank_transfer",
+				paymentStatus: "paid",
+				fulfilmentMethod: order.fulfilment?.method ?? "delivery",
+				shippingAddress:
+					order.fulfilment?.method === "delivery"
+						? `${order.shippingAddress.street}, ${order.shippingAddress.city}, ${order.shippingAddress.state}`
+						: undefined,
+				pickupNote: order.fulfilment?.pickupNote,
+			});
+		} catch (err) {
+			console.error("[markOrderPaid] admin email failed", err);
+		}
+	})();
 	await recordAudit({
 		action: "order.paid",
 		entity: "Order",
